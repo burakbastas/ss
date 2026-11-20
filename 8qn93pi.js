@@ -1,4 +1,4 @@
-import { h, clear, icon, toast } from './nyxk7bs.js';
+import { h, clear, icon, toast, logoMark } from './nyxk7bs.js';
 import { loadSettings, settings } from './f36qmgd.js';
 import { configureMusic } from './ewdv3t5.js';
 import { applyTheme } from './w7vpbjf.js';
@@ -50,7 +50,7 @@ async function boot() {
   clear(nav, ROUTES.map((r) => h('a', { href: `#${r.id}`, 'data-id': r.id }, icon(r.icon), h('span', null, r.label))));
   clear(document.getElementById('app'),
     h('div', { class: 'shell' },
-      h('div', { class: 'brand', 'aria-hidden': 'true' }, h('span', { class: 'brand-mark' }), 'VocUp'),
+      h('div', { class: 'brand', 'aria-hidden': 'true' }, logoMark(), 'VocUp'),
       nav,
       main));
   window.addEventListener('hashchange', route);

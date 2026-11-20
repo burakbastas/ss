@@ -58,6 +58,17 @@ const ICONS = {
   clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M10 2.5h4"/>',
 };
 
+/** The VocUp mark: the vocal folds seen from above, meeting in an upward point. */
+export function logoMark() {
+  const span = document.createElement('span');
+  span.className = 'brand-mark';
+  span.innerHTML = '<svg viewBox="8 6 84 86" aria-hidden="true">'
+    + '<path class="lm-fold" d="M45 14 C40 34 30 58 16 84 C22 89 29 89 33 84 C41 62 45 38 45 14 Z"/>'
+    + '<path class="lm-fold" d="M55 14 C60 34 70 58 84 84 C78 89 71 89 67 84 C59 62 55 38 55 14 Z"/>'
+    + '<path class="lm-glot" d="M50 10 C48 30 44 56 39 80 Q50 86 61 80 C56 56 52 30 50 10 Z"/></svg>';
+  return span;
+}
+
 export function icon(name, size = 22) {
   const span = document.createElement('span');
   span.className = 'ico';

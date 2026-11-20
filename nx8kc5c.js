@@ -1,4 +1,4 @@
-import { h, clear, segmented, fmtMinutes, fmtEst, fmtDuration, fmtDate, dayKey } from './nyxk7bs.js';
+import { h, clear, segmented, fmtMinutes, fmtEst, fmtDuration, fmtDate, dayKey, logoMark } from './nyxk7bs.js';
 import { db, settings, saveSettings } from './f36qmgd.js';
 import { generatePlan, stepLabel, stepCatLabel, ofDayText } from './rdjz6js.js';
 import { runSession } from './amcnm9m.js';
@@ -18,7 +18,7 @@ export async function renderToday(main) {
 
   const rerender = () => renderToday(main);
   const top = h('section', { class: 'today-head' },
-    h('div', { class: 'brand-inline', 'aria-hidden': 'true' }, h('span', { class: 'brand-mark' }), 'VocUp'),
+    h('div', { class: 'brand-inline', 'aria-hidden': 'true' }, logoMark(), 'VocUp'),
     h('p', { class: 'muted' }, fmtDate(Date.now())),
     h('h1', null, open ? 'Yarım kalan seans' : doneToday.length ? 'Bugün çalıştın' : 'Bugünkü çalışma'));
 
