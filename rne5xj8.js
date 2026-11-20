@@ -20,6 +20,7 @@ export class Synth {
     this.out.connect(comp).connect(ctx.destination);
     this.pianoWave = wave(ctx, [1, 0.45, 0.3, 0.18, 0.12, 0.08, 0.05, 0.035, 0.02, 0.012]);
     this.organWave = wave(ctx, [1, 0.6, 0.35, 0.22, 0.1, 0.06]);
+    this.fluteWave = wave(ctx, [1, 0.22, 0.08, 0.03]);
     this.live = new Set();
     this.droneVoice = null;
     this.inst = null;
@@ -66,10 +67,11 @@ export class Synth {
     return p;
   }
 
-  track(nodes, until) {
-    const item = { nodes, until };
+  /** srcs: oscillators/buffer sources, gain: the envelope that silences them all. */
+  track(srcs, gain, until) {
+    const item = { srcs, gain, until };
     this.live.add(item);
-    nodes[0].onended = () => this.live.delete(item);
+    srcs[srcs.length - 1].onended = () => this.live.delete(item);
     return item;
   }
 
@@ -91,7 +93,7 @@ export class Synth {
     src.connect(g).connect(this.out);
     src.start(when);
     src.stop(when + dur + 0.9);
-    return this.track([src, g], when + dur + 0.9);
+    return this.track([src], g, when + dur + 0.9);
   }
 
   oscPiano(midi, when, dur, vel) {
@@ -114,7 +116,7 @@ export class Synth {
     osc.connect(lp).connect(g).connect(this.out);
     osc.start(when);
     osc.stop(when + dur + 0.6);
-    return this.track([osc, g], when + dur + 0.6);
+    return this.track([osc], g, when + dur + 0.6);
   }
 
   chord(midis, when, dur, vel = 0.3, spread = 0.012) {
@@ -133,7 +135,69 @@ export class Synth {
     osc.connect(g).connect(this.out);
     osc.start(when);
     osc.stop(when + 0.06);
-    return this.track([osc, g], when + 0.06);
+    return this.track([osc], g, when + 0.06);
+  }
+
+  /**
+   * Scheduled dem: a held organ-like tone (no decay) from `when` for `dur` seconds.
+   * midis may be fractional; levels weights each pitch.
+   */
+  droneAt(midis, when, dur, vel = 0.5, levels = null) {
+    const { ctx } = this;
+    const g = ctx.createGain();
+    const level = vel * 0.32;
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(level, when + 0.25);
+    g.gain.setValueAtTime(level, when + Math.max(0.26, dur - 0.05));
+    g.gain.setTargetAtTime(0, when + Math.max(0.26, dur), 0.12);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 1900;
+    lp.connect(g).connect(this.out);
+    const srcs = [];
+    midis.forEach((m, i) => {
+      const w = ctx.createGain();
+      w.gain.value = (levels?.[i] ?? 1) / midis.length;
+      w.connect(lp);
+      for (const det of [-3, 3]) {
+        const o = ctx.createOscillator();
+        o.setPeriodicWave(this.organWave);
+        o.frequency.value = midiToFreq(m);
+        o.detune.value = det;
+        o.connect(w);
+        o.start(when);
+        o.stop(when + dur + 0.8);
+        srcs.push(o);
+      }
+    });
+    return this.track(srcs, g, when + dur + 0.8);
+  }
+
+  /**
+   * Guide tone that slides along a path of { t, midi } points (t relative to `when`),
+   * linear in pitch between points.
+   */
+  glideTone(points, when, vel = 0.5) {
+    const { ctx } = this;
+    const t0 = when + points[0].t;
+    const t1 = when + points[points.length - 1].t;
+    const o = ctx.createOscillator();
+    o.setPeriodicWave(this.fluteWave);
+    o.frequency.setValueAtTime(midiToFreq(points[0].midi), t0);
+    for (const q of points.slice(1)) o.frequency.exponentialRampToValueAtTime(midiToFreq(q.midi), when + q.t);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 3200;
+    const g = ctx.createGain();
+    const level = vel * 0.34;
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(level, t0 + 0.12);
+    g.gain.setValueAtTime(level, t1);
+    g.gain.linearRampToValueAtTime(0, t1 + 0.25);
+    o.connect(lp).connect(g).connect(this.out);
+    o.start(t0);
+    o.stop(t1 + 0.35);
+    return this.track([o], g, t1 + 0.35);
   }
 
   /** Continuous reference tone (dem). */
@@ -174,12 +238,15 @@ export class Synth {
   stopAll() {
     const now = this.ctx.currentTime;
     for (const item of this.live) {
-      const [src, g] = item.nodes;
       try {
-        g.gain.cancelScheduledValues(now);
-        g.gain.setTargetAtTime(0, now, 0.04);
-        src.stop(now + 0.25);
-      } catch { /* already stopped */ }
+        const p = item.gain.gain;
+        if (p.cancelAndHoldAtTime) p.cancelAndHoldAtTime(now);
+        else p.cancelScheduledValues(now);
+        p.setTargetAtTime(0, now, 0.04);
+      } catch { /* ignore */ }
+      for (const src of item.srcs) {
+        try { src.stop(now + 0.25); } catch { /* not started or already stopped */ }
+      }
     }
     this.live.clear();
   }

@@ -56,6 +56,8 @@ export const DEFAULTS = {
   outputId: '',
   theme: 'auto',
   sessionMin: 30,
+  dem: 1,
+  libTrad: 'bati',
 };
 
 export const settings = { ...DEFAULTS };

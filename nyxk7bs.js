@@ -55,6 +55,7 @@ const ICONS = {
   plus: '<path d="M6 12h12M12 6v12"/>',
   check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
   dot: '<circle cx="12" cy="12" r="6" fill="currentColor"/>',
+  clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2M10 2.5h4"/>',
 };
 
 export function icon(name, size = 22) {
@@ -112,6 +113,20 @@ export function fmtDuration(sec) {
 
 export function fmtMinutes(sec) {
   return `${Math.max(1, Math.round(sec / 60))} dk`;
+}
+
+/** Estimated length: seconds under a minute (to 5 s), else minutes to the half minute. */
+export function fmtEst(sec) {
+  if (sec < 55) return `${Math.max(5, Math.round(sec / 5) * 5)} sn`;
+  const half = Math.round(sec / 30);
+  const m = Math.floor(half / 2);
+  return half % 2 ? `${m} dk 30 sn` : `${m} dk`;
+}
+
+/** Stopwatch text, m:ss. */
+export function fmtClock(sec) {
+  const s = Math.max(0, Math.floor(sec));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 export const dayKey = (ts) => {

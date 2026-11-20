@@ -191,8 +191,10 @@ canvas.chart { width: 100%; height: 150px; display: block; touch-action: pan-y; 
 .lib-group { margin-top: 30px; }
 .lib-group > h2 { font-size: var(--fs-1); color: var(--muted); font-weight: 600; margin-bottom: 4px; }
 .lib-list { list-style: none; margin: 0; padding: 0; }
-.lib-list li { display: flex; gap: 16px; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--line); }
-.lib-text { display: grid; gap: 3px; }
+.lib-list li { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; justify-content: space-between; padding: 14px 0; border-bottom: 1px solid var(--line); }
+.lib-text { display: grid; gap: 3px; flex: 1 1 300px; min-width: 0; }
+.lib-act { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+.lib-act .select { min-width: 0; max-width: 100%; }
 .lib-text .muted { font-size: var(--fs-0); }
 .lib-how { font-size: 0.9375rem; max-width: 60ch; }
 
@@ -252,6 +254,8 @@ canvas.trail { width: 100%; height: 100%; display: block; }
 .run-title { font-size: var(--fs-2); font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run-sub { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 0.9375rem; }
 .run-sub .key { color: var(--ink); font-weight: 600; }
+.elapsed { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.elapsed .ico { color: var(--voice); }
 .run-progress { height: 3px; background: var(--raise); margin: 0 16px; border-radius: 2px; overflow: hidden; }
 .run-progress span { display: block; height: 100%; width: 0; background: var(--voice); transition: width 300ms; }
 .run-focus { padding: 10px 16px 4px; color: var(--muted); max-width: 70ch; }
@@ -338,6 +342,7 @@ canvas.roll { position: absolute; inset: 8px 8px 0; width: calc(100% - 16px); he
 .run-meta { padding: 6px 16px 0; color: var(--muted); font-size: var(--fs-0); max-width: 70ch; }
 .now { display: grid; gap: 2px; min-width: 0; }
 .now-big { font-size: clamp(3rem, 13vw, 5.75rem); font-weight: 800; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; transition: color 120ms; }
+.now-big.long { font-size: clamp(2.1rem, 8.5vw, 3.9rem); line-height: 1.05; }
 .now[data-state="listen"] .now-big, .now[data-state="rest"] .now-big { color: var(--muted); }
 .now[data-state="sing"] .now-big { color: var(--voice); }
 .now[data-state="answer"] .now-big { color: var(--hit); }

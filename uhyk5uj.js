@@ -1,9 +1,10 @@
-import { h, clear, icon, toast, fmtDuration, segmented } from './nyxk7bs.js';
+import { h, clear, icon, toast, fmtDuration, fmtClock, segmented } from './nyxk7bs.js';
 import { audio, ensureAudio, loadPiano, keepAwake } from './qpy3wmh.js';
 import { settings, db } from './f36qmgd.js';
-import { byId, RES } from './d8hbkej.js';
+import { byId, RES, resolveEx } from './d8hbkej.js';
 import { buildRep, buildGlide, buildIntervalTrial } from './f6c5xz4.js';
 import { noteName } from './ewdv3t5.js';
+import { approxName } from './392vqcv.js';
 import { drawRep, readPalette } from './zvga6p5.js';
 import { pianoTools } from './ybmk6gs.js';
 
@@ -53,9 +54,11 @@ function header({ title, onInfo }) {
   const key = h('span', { class: 'key' });
   const count = h('span', { class: 'count' });
   const vowel = h('span', { class: 'vowel' });
+  const clockText = h('span', null, '0:00');
+  const clock = h('span', { class: 'elapsed', title: 'Bu egzersizde geçen çalışma süresi' }, icon('clock', 16), clockText);
   const el = h('header', { class: 'run-head' },
     h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Kapat', onclick: requestClose }, icon('close')),
-    h('div', { class: 'run-titles' }, t, h('p', { class: 'run-sub' }, key, count, vowel)),
+    h('div', { class: 'run-titles' }, t, h('p', { class: 'run-sub' }, clock, key, count, vowel)),
     onInfo ? h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Nasıl yapılır', onclick: onInfo }, icon('info')) : h('span'));
   return {
     el,
@@ -65,6 +68,10 @@ function header({ title, onInfo }) {
       if (c != null) count.textContent = c;
       if (v != null) vowel.textContent = v ? `“${v}”` : '';
     },
+    time(sec) {
+      const txt = fmtClock(sec);
+      if (clockText.textContent !== txt) clockText.textContent = txt;
+    },
   };
 }
 
@@ -73,6 +80,7 @@ export function exMeta(ex) {
     ex.res ? `Yarı kapalı ses yolu: ${RES[ex.res]}` : null,
     ex.gear ? `Gereken: ${ex.gear}` : null,
     ex.scale || null,
+    ex.sc?.yapi ? `${ex.sc.yapi}. ${ex.sc.note}`.trim() : null,
   ].filter(Boolean);
 }
 
@@ -97,7 +105,10 @@ function nowDisplay() {
   return {
     el,
     set(text, subText = '', state = '') {
-      if (big.textContent !== text) big.textContent = text;
+      if (big.textContent !== text) {
+        big.textContent = text;
+        big.classList.toggle('long', text.length > 6);
+      }
       if (sub.textContent !== subText) sub.textContent = subText;
       el.dataset.state = state;
     },
@@ -128,8 +139,25 @@ function schedule(r, t0) {
     if (ev.kind === 'chord') audio.synth.chord(ev.midis, t0 + ev.t, ev.dur, ev.vel, ev.spread ?? 0.012);
     else if (ev.kind === 'note') audio.synth.piano(ev.midi, t0 + ev.t, ev.dur, ev.vel);
     else if (ev.kind === 'click') audio.synth.click(t0 + ev.t, ev.accent);
+    else if (ev.kind === 'drone') audio.synth.droneAt(ev.midis, t0 + ev.t, ev.dur, ev.vel * (settings.dem || 1), ev.levels);
+    else if (ev.kind === 'glide') audio.synth.glideTone(ev.points, t0 + ev.t, ev.vel * (settings.dem || 1));
   }
 }
+
+/** Pitch along a glide path at time t. */
+function pathAt(path, t) {
+  if (t <= path[0].t) return path[0].midi;
+  for (let i = 1; i < path.length; i++) {
+    const a = path[i - 1];
+    const b = path[i];
+    if (t <= b.t) return a.midi + ((b.midi - a.midi) * (t - a.t)) / (b.t - a.t);
+  }
+  return path[path.length - 1].midi;
+}
+
+const saveAll = async (rows) => {
+  for (const r of rows) { try { await db.add('results', r); } catch { /* storage full */ } }
+};
 
 /* ---------- step runner entry ---------- */
 
@@ -149,7 +177,7 @@ export function runStep(root, step, opts = {}) {
         const ok = await loadPiano((p) => { msg.textContent = `Piyano yükleniyor… %${Math.round(p * 100)}`; });
         if (!ok) toast('Piyano sesleri yüklenemedi; yedek ses kullanılıyor.');
       }
-      if (aborted) { resolve({ completed: false, results: [] }); return; }
+      if (aborted) { resolve({ completed: false, results: [], sec: 0 }); return; }
       const make = step.kind === 'sustain' ? sustainRunner : step.kind === 'free' ? freeRunner : timelineRunner;
       ctl = make(root, step, opts, resolve);
     };
@@ -162,7 +190,8 @@ export function runStep(root, step, opts = {}) {
 
 function timelineRunner(root, step, opts, resolve) {
   const total = step.kind === 'queue' ? step.queue.length : step.kind === 'glide' ? step.reps : step.trials;
-  const firstEx = byId[step.kind === 'queue' ? step.queue[0].exId : step.exId];
+  const q0 = step.kind === 'queue' ? step.queue[0] : null;
+  const firstEx = q0 ? resolveEx(byId[q0.exId], q0.tm) : byId[step.exId];
   let tempo = settings.tempo;
   let i = 0;
   let rep = null;
@@ -171,8 +200,12 @@ function timelineRunner(root, step, opts, resolve) {
   let done = false;
   let guideOverride = null;
   let doneReps = 0;
+  let active = 0;
+  let lastT = null;
   const exCount = {};
   const repsByEx = {};
+  const secByEx = {};
+  const tmByEx = {};
   const ivTrials = [];
   const built = [];
 
@@ -180,11 +213,13 @@ function timelineRunner(root, step, opts, resolve) {
     title: firstEx.title,
     onInfo: () => infoSheet(rep?.ex || firstEx, step.interleaved
       ? 'Bu blokta egzersizler birkaç tonda bir dönüşümlü gelir. İlk anda zor hissettirir ama araştırmalarda kalıcı öğrenmeyi artırdığı görülüyor.'
-      : settings.guide === 'fade' ? 'Melodi her egzersizin ilk iki tonunda piyanoda çalar, sonra yalnızca akorlar kalır. Melodi düğmesiyle istediğin zaman açıp kapatabilirsin.' : null),
+      : step.kind === 'glide' ? 'Kılavuz ses sirenin yolunu çizer; altta en pes sesten bir dem çalar. Melodi düğmesi kılavuz sesi açıp kapatır.'
+        : firstEx.isTm ? 'Akor yerine karar perdesinden sürekli bir dem çalar; melodi çaldığında piyano onu iki oktav birden verir. Perdeler koma hassasiyetinde (1 koma ≈ 22,6 sent).'
+          : settings.guide === 'fade' ? 'Melodi her egzersizin ilk iki tonunda piyanoda çalar, sonra yalnızca akorlar kalır. Melodi düğmesiyle istediğin zaman açıp kapatabilirsin.' : null),
   });
   const meta = h('p', { class: 'run-meta' });
   const focus = h('p', { class: 'run-focus' }, firstEx.focus);
-  const canvas = h('canvas', { class: 'roll', 'aria-label': 'Söylenecek notalar ve akorlar' });
+  const canvas = h('canvas', { class: 'roll', 'aria-label': 'Söylenecek notalar ve eşlik' });
   const now = nowDisplay();
   const markHit = h('button', { class: 'btn', type: 'button' }, 'Tuttu');
   const markMiss = h('button', { class: 'btn ghost', type: 'button' }, 'Kaçtı');
@@ -193,7 +228,7 @@ function timelineRunner(root, step, opts, resolve) {
 
   const playBtn = h('button', { class: 'ctl main', type: 'button', 'aria-label': 'Duraklat' }, icon('pause', 26));
   const tempoVal = h('span', { class: 'tempo-val' });
-  const guideBtn = h('button', { class: 'btn guide', type: 'button', 'aria-pressed': 'false' }, 'Melodi');
+  const guideBtn = h('button', { class: 'btn guide', type: 'button', 'aria-pressed': 'false' }, step.kind === 'glide' ? 'Kılavuz ses' : 'Melodi');
   const progress = h('div', { class: 'run-progress' }, h('span'));
 
   const controls = h('footer', { class: 'run-ctrl' },
@@ -206,7 +241,7 @@ function timelineRunner(root, step, opts, resolve) {
       h('button', { class: 'ctl small', type: 'button', 'aria-label': 'Tempoyu düşür', onclick: () => setTempo(-0.05) }, icon('minus', 18)),
       tempoVal,
       h('button', { class: 'ctl small', type: 'button', 'aria-label': 'Tempoyu artır', onclick: () => setTempo(0.05) }, icon('plus', 18))) : null,
-    step.kind === 'queue' ? h('div', { class: 'ctl-group' }, guideBtn) : null);
+    step.kind !== 'interval' ? h('div', { class: 'ctl-group' }, guideBtn) : null);
 
   clear(root, h('div', { class: 'run' }, head.el, progress, meta, focus, h('div', { class: 'stage' }, canvas), h('div', { class: 'run-read' }, now.el, side), controls));
 
@@ -214,7 +249,8 @@ function timelineRunner(root, step, opts, resolve) {
   guideBtn.addEventListener('click', () => {
     guideOverride = !(rep?.guide);
     guideBtn.setAttribute('aria-pressed', String(guideOverride));
-    toast(guideOverride ? 'Melodi sonraki tondan itibaren çalacak.' : 'Melodi sonraki tondan itibaren susacak.');
+    const what = step.kind === 'glide' ? 'Kılavuz ses' : 'Melodi';
+    toast(guideOverride ? `${what} sonraki tekrardan itibaren çalacak.` : `${what} sonraki tekrardan itibaren susacak.`);
   });
 
   const sCur = () => ({ ...settings, tempo });
@@ -231,13 +267,16 @@ function timelineRunner(root, step, opts, resolve) {
     return (exCount[ex.id] || 0) < 2;
   }
 
+  // The siren guide tone is the accompaniment itself, so it stays on unless turned off.
+  const glideGuide = () => (guideOverride != null ? guideOverride : settings.guide !== 'never');
+
   function getRep(k) {
     if (step.kind === 'queue') {
       const q = step.queue[k];
-      const ex = byId[q.exId];
+      const ex = resolveEx(byId[q.exId], q.tm);
       return buildRep(ex, q.root, sCur(), { guide: guideFor(ex) });
     }
-    if (step.kind === 'glide') return buildGlide(firstEx, settings, k);
+    if (step.kind === 'glide') return buildGlide(firstEx, settings, k, { guide: glideGuide() });
     if (!built[k]) built[k] = buildIntervalTrial(firstEx, settings);
     return built[k];
   }
@@ -252,6 +291,7 @@ function timelineRunner(root, step, opts, resolve) {
     playBtn.setAttribute('aria-label', 'Duraklat');
     guideBtn.setAttribute('aria-pressed', String(!!rep.guide));
     const ex = rep.ex;
+    if (ex.isTm) tmByEx[ex.id] = { tm: ex.variant, set: ex.set };
     head.set({ title: ex.title, key: rep.kind === 'glide' ? '' : rep.label, count: `${i + 1}/${total}`, vowel: ex.vowel });
     meta.textContent = exMeta(ex).join('. ');
     meta.hidden = !meta.textContent;
@@ -299,6 +339,14 @@ function timelineRunner(root, step, opts, resolve) {
 
   function tick(nowT) {
     if (!rep) return;
+    // Working time: counts only while a rep is playing, so pauses are left out.
+    if (running && lastT != null) {
+      const dt = Math.min(0.25, Math.max(0, nowT - lastT));
+      active += dt;
+      secByEx[rep.ex.id] = (secByEx[rep.ex.id] || 0) + dt;
+    }
+    lastT = nowT;
+    head.time(active);
     const t = running ? nowT - repStart : 0;
     const ex = rep.ex;
     let hide = false;
@@ -315,19 +363,24 @@ function timelineRunner(root, step, opts, resolve) {
     drawRep(canvas, { rep, t, hideTargets: hide, lane: ex.dyn === 'mdv', marks: rep.kind === 'interval' && ivTrials[i]?.mark ? [ivTrials[i].mark] : null });
     if (!running) return;
     // What to sing now
+    const nm = (tg) => (tg.perde || noteName(tg.midi));
+    const sub = (tg) => tg.syl || (tg.perde ? approxName(tg.midi) : '');
     if (rep.kind === 'interval') {
       if (t < rep.singStart) now.set(noteName(rep.root), 'Dinle', 'listen');
       else if (t < rep.singEnd) now.set('?', `${rep.interval.name} ${rep.dir > 0 ? 'yukarı' : 'aşağı'}: söyle`, 'sing');
       else now.set(noteName(rep.targets[0].midi), 'Doğru ses buydu', 'answer');
     } else if (rep.kind === 'glide') {
-      now.set(t < rep.singStart ? noteName(rep.root) : 'Kaydır', t < rep.singStart ? 'Başlangıç sesi' : ex.vowel, t < rep.singStart ? 'listen' : 'sing');
+      if (t < rep.singStart) now.set(noteName(rep.root), 'Başlangıç sesi', 'listen');
+      else if (t < rep.singEnd) now.set(noteName(pathAt(rep.path, t)), `${ex.vowel}, kaydır`, 'sing');
+      else now.set('Nefes', '', 'rest');
     } else {
       const cur = rep.targets.find((tg) => t >= tg.t0 && t < tg.t1);
       const next = rep.targets.find((tg) => tg.t0 >= t);
-      if (rep.listen && t < rep.singStart - rep.beat) now.set(noteName(rep.targets[0].midi), 'Önce dinle', 'listen');
-      else if (t < rep.singStart) now.set(noteName(rep.targets[0].midi), `Hazırlan, ${Math.max(1, Math.ceil((rep.singStart - t) / rep.beat))}`, 'listen');
-      else if (cur) now.set(noteName(cur.midi), cur.syl || '', 'sing');
-      else if (next) now.set(noteName(next.midi), next.syl || '', 'sing');
+      const first = rep.targets[0];
+      if (rep.listen && t < rep.singStart - rep.beat) now.set(nm(first), 'Önce dinle', 'listen');
+      else if (t < rep.singStart) now.set(nm(first), `Hazırlan, ${Math.max(1, Math.ceil((rep.singStart - t) / rep.beat))}`, 'listen');
+      else if (cur) now.set(nm(cur), sub(cur), 'sing');
+      else if (next) now.set(nm(next), sub(next), 'sing');
       else now.set('Nefes', '', 'rest');
     }
     if (t >= rep.duration) endRep();
@@ -335,19 +388,25 @@ function timelineRunner(root, step, opts, resolve) {
 
   async function saveResults() {
     const at = Date.now();
+    const sid = opts.sessionId || null;
     const out = [];
+    const extra = (exId) => ({ sec: Math.round(secByEx[exId] || 0), ...(tmByEx[exId] || {}) });
     for (const [exId, roots] of Object.entries(repsByEx)) {
-      out.push({ exId, at, sessionId: opts.sessionId || null, kind: 'pattern', keys: roots.length, roots });
+      out.push({ exId, at, sessionId: sid, kind: 'pattern', keys: roots.length, roots, ...extra(exId) });
     }
-    if (step.kind === 'glide' && doneReps) out.push({ exId: firstEx.id, at, sessionId: opts.sessionId || null, kind: 'glide', reps: doneReps });
+    if (step.kind === 'glide' && doneReps) out.push({ exId: firstEx.id, at, sessionId: sid, kind: 'glide', reps: doneReps, ...extra(firstEx.id) });
     if (step.kind === 'interval' && ivTrials.length) {
       const marked = ivTrials.filter((x) => x?.mark);
       out.push({
-        exId: firstEx.id, at, sessionId: opts.sessionId || null, kind: 'interval', trials: ivTrials.filter(Boolean),
-        hitRate: marked.length ? marked.filter((x) => x.mark === 'hit').length / marked.length : null,
+        exId: firstEx.id, at, sessionId: sid, kind: 'interval', trials: ivTrials.filter(Boolean),
+        hitRate: marked.length ? marked.filter((x) => x.mark === 'hit').length / marked.length : null, ...extra(firstEx.id),
       });
     }
-    for (const r of out) { try { await db.add('results', r); } catch { /* storage full */ } }
+    // Stopped before the first full rep: keep the time anyway.
+    for (const [exId, sec] of Object.entries(secByEx)) {
+      if (sec >= 5 && !out.some((r) => r.exId === exId)) out.push({ exId, at, sessionId: sid, kind: 'time', ...extra(exId) });
+    }
+    await saveAll(out);
     return out;
   }
 
@@ -362,7 +421,7 @@ function timelineRunner(root, step, opts, resolve) {
     stopKeys();
     audio.synth.stopAll();
     const results = await saveResults();
-    resolve({ completed, results, exIds: step.exIds || [firstEx.id] });
+    resolve({ completed, results, exIds: step.exIds || [firstEx.id], sec: active });
   }
 
   startRep();
@@ -374,6 +433,7 @@ function timelineRunner(root, step, opts, resolve) {
 function sustainRunner(root, step, opts, resolve) {
   const ex = byId[step.exId];
   const notes = step.notes;
+  const started = performance.now();
   let k = 0;
   let holdStart = null;
   let done = false;
@@ -437,7 +497,9 @@ function sustainRunner(root, step, opts, resolve) {
     enter();
   }
 
+  const elapsed = () => (performance.now() - started) / 1000;
   const stopLoop = frameLoop(() => {
+    head.time(elapsed());
     if (holdStart != null) timer.textContent = fmtSec((performance.now() - holdStart) / 1000);
   });
 
@@ -446,13 +508,13 @@ function sustainRunner(root, step, opts, resolve) {
     done = true;
     stopLoop();
     audio.synth.stopAll();
+    const sec = elapsed();
     const results = [];
-    if (out.length) {
-      const r = { exId: ex.id, at: Date.now(), sessionId: opts.sessionId || null, kind: 'sustain', mpt: out, best: Math.max(...out.map((x) => x.sec)) };
-      try { await db.add('results', r); } catch { /* ignore */ }
-      results.push(r);
-    }
-    resolve({ completed, results, exIds: [ex.id] });
+    const base = { exId: ex.id, at: Date.now(), sessionId: opts.sessionId || null, sec: Math.round(sec) };
+    if (out.length) results.push({ ...base, kind: 'sustain', mpt: out, best: Math.max(...out.map((x) => x.sec)) });
+    else if (sec >= 5) results.push({ ...base, kind: 'time' });
+    await saveAll(results);
+    resolve({ completed, results, exIds: [ex.id], sec });
   }
 
   enter();
@@ -477,14 +539,15 @@ function freeRunner(root, step, opts, resolve) {
     h('p', { class: 'run-focus' }, ex.focus),
     h('div', { class: 'free-body' }, tools.el, h('label', { class: 'field' }, h('span', null, 'Not'), note)),
     h('footer', { class: 'run-ctrl' }, clock, h('button', { class: 'btn primary', type: 'button', onclick: () => finish(true) }, 'Bitir'))));
-  head.set({ count: `${Math.round(limit / 60)} dk` });
+  head.set({ count: `${Math.round(limit / 60)} dk ayrıldı` });
 
   const tick = setInterval(() => {
     const el = (Date.now() - started) / 1000;
     const left = limit - el;
+    head.time(el);
     clock.textContent = left >= 0
-      ? `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, '0')} kaldı`
-      : `+${Math.floor(-left / 60)}:${String(Math.floor(-left % 60)).padStart(2, '0')}`;
+      ? `${fmtClock(left)} kaldı`
+      : `Süre doldu, +${fmtClock(-left)}`;
     if (left < 0 && !warned) { warned = true; toast('Ayrılan süre doldu. İstersen devam et.'); }
   }, 500);
 
@@ -493,9 +556,9 @@ function freeRunner(root, step, opts, resolve) {
     done = true;
     clearInterval(tick);
     const sec = (Date.now() - started) / 1000;
-    const r = { exId: ex.id, at: Date.now(), sessionId: opts.sessionId || null, kind: 'free', sec, note: note.value.trim() };
-    try { await db.add('results', r); } catch { /* ignore */ }
-    resolve({ completed, results: [r], exIds: [ex.id] });
+    const r = { exId: ex.id, at: Date.now(), sessionId: opts.sessionId || null, kind: 'free', sec: Math.round(sec), note: note.value.trim() };
+    await saveAll([r]);
+    resolve({ completed, results: [r], exIds: [ex.id], sec });
   }
 
   return { abort: () => finish(false) };
@@ -524,18 +587,23 @@ export function ratingPanel({ exIds, sessionId = null, onDone }) {
       h('button', { class: 'btn ghost', type: 'button', onclick: () => onDone?.() }, 'Geç')));
 }
 
-export function summaryLines(results) {
+export function summaryLines(results, { total: withTotal = true } = {}) {
   const lines = [];
+  const total = results.reduce((a, r) => a + (r.sec || 0), 0);
+  if (withTotal && results.length > 1 && total) lines.push(['Toplam süre', fmtDuration(total)]);
   for (const r of results) {
     const ex = byId[r.exId];
     if (!ex) continue;
-    if (r.kind === 'pattern') lines.push([ex.title, `${r.keys} ton`]);
+    const title = r.tm ? `${resolveEx(ex, r.tm).title}, ${resolveEx(ex, r.tm).sc.label}` : ex.title;
+    const time = r.sec ? `, ${fmtDuration(r.sec)}` : '';
+    if (r.kind === 'pattern') lines.push([title, `${r.keys} ton${time}`]);
     else if (r.kind === 'interval') {
       const marked = r.trials.filter((x) => x.mark);
-      lines.push([ex.title, marked.length ? `${marked.filter((x) => x.mark === 'hit').length}/${marked.length} tuttu (kendi işaretlemen)` : `${r.trials.length} deneme`]);
-    } else if (r.kind === 'sustain') lines.push([ex.title, r.mpt.map((m) => `${noteName(m.midi)} ${fmtSec(m.sec)} sn`).join(', ')]);
-    else if (r.kind === 'glide') lines.push([ex.title, `${r.reps} tekrar`]);
-    else if (r.kind === 'free') lines.push([ex.title, fmtDuration(r.sec)]);
+      lines.push([title, (marked.length ? `${marked.filter((x) => x.mark === 'hit').length}/${marked.length} tuttu (kendi işaretlemen)` : `${r.trials.length} deneme`) + time]);
+    } else if (r.kind === 'sustain') lines.push([title, r.mpt.map((m) => `${noteName(m.midi)} ${fmtSec(m.sec)} sn`).join(', ') + time]);
+    else if (r.kind === 'glide') lines.push([title, `${r.reps} tekrar${time}`]);
+    else if (r.kind === 'free') lines.push([title, fmtDuration(r.sec)]);
+    else if (r.kind === 'time') lines.push([title, `yarıda kaldı, ${fmtDuration(r.sec)}`]);
   }
   return lines;
 }

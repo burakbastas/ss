@@ -1,5 +1,9 @@
 import { VOICES, INTERVALS, noteName } from './ewdv3t5.js';
 import { harmonize, voice, chordName } from './88d542p.js';
+import { scaleLines, k2st } from './392vqcv.js';
+
+/** Time the runner leaves between scheduling and the start of each repetition. */
+export const REP_GAP = 0.12;
 
 export const beatsOf = (ex, i, n) => {
   if (Array.isArray(ex.beats)) return ex.beats[i];
@@ -23,9 +27,9 @@ export function keysFor(ex, s) {
   const z = ex.zone || {};
   const lo = s.lo + (z.lo || 0);
   const hi = s.hi - (z.hi || 0);
-  let rLo = lo - minO;
-  const rHi = Math.max(hi - maxO, rLo);
-  if (z.topFrom != null) rLo = Math.min(Math.max(rLo, s.hi - z.topFrom - maxO), rHi);
+  let rLo = Math.ceil(lo - minO - 1e-6);
+  const rHi = Math.max(Math.floor(hi - maxO + 1e-6), rLo);
+  if (z.topFrom != null) rLo = Math.min(Math.max(rLo, Math.ceil(s.hi - z.topFrom - maxO)), rHi);
   const step = ex.step || 1;
   const asc = [];
   for (let r = rLo; r <= rHi; r += step) asc.push(r);
@@ -34,11 +38,12 @@ export function keysFor(ex, s) {
   return asc;
 }
 
+/** Length of one repetition as buildRep lays it out, plus the scheduling gap. */
 export function repSeconds(ex, s) {
   const beat = 60 / (ex.bpm * s.tempo);
   const pat = patternBeats(ex) * beat;
   const once = s.accomp === 'once' && !ex.noListen;
-  return 2 * beat + pat + (once ? pat + beat : 0) + 0.75 * beat;
+  return 2 * beat + pat + (once ? pat + beat : 0) + 0.75 * beat + REP_GAP;
 }
 
 /** Thin the key list (keeping both ends) so the run fits into maxSec. */
@@ -62,9 +67,15 @@ export function planKeys(ex, s, maxSec) {
   return fitKeys(keys, per, maxSec);
 }
 
+/** Dem pitches under a karar: one and two octaves below, the lower one softer. */
+export function demFor(root) {
+  return root - 24 >= 33 ? { midis: [root - 12, root - 24], levels: [1, 0.6] } : { midis: [root - 12], levels: [1] };
+}
+
 /**
  * Accompaniment for one pass of the pattern starting at t0 (seconds from rep start).
- * Pushes piano events and chord labels.
+ * Pushes piano events and chord labels. Turkish-music versions get no chords: the dem
+ * runs under the whole rep and the melody, when it plays, sounds in two octaves.
  */
 function accompany(ex, key, s, t0, beat, events, labels, melody) {
   const mode = ex.mode || 'major';
@@ -74,7 +85,9 @@ function accompany(ex, key, s, t0, beat, events, labels, melody) {
   const acc = ex.acc || 'pad';
   const female = isFemale(s);
 
-  if (acc === 'dem') {
+  if (ex.isTm) {
+    labels.push({ t: t0, text: `${ex.sc.label}, dem ${ex.kararName}` });
+  } else if (acc === 'dem') {
     const dem = [key - 12, key - 5];
     for (let b = 0; b < total - 1e-6; b += 4) {
       const d = Math.min(4, total - b) * beat;
@@ -114,8 +127,13 @@ function accompany(ex, key, s, t0, beat, events, labels, melody) {
     let t = t0;
     ex.notes.forEach((off, i) => {
       const d = beatsArr[i] * beat;
-      const sound = ex.staccato ? d * 0.45 : d;
-      events.push({ kind: 'note', midi: key + off, t, dur: sound * 0.95, vel: 0.36 });
+      const sound = (ex.staccato ? d * 0.45 : d) * 0.95;
+      if (ex.isTm) {
+        events.push({ kind: 'note', midi: key + off, t, dur: sound, vel: 0.34 });
+        events.push({ kind: 'note', midi: key + off - 12, t: t + 0.004, dur: sound, vel: 0.26 });
+      } else {
+        events.push({ kind: 'note', midi: key + off, t, dur: sound, vel: 0.36 });
+      }
       t += d;
     });
   }
@@ -132,9 +150,17 @@ export function buildRep(ex, root, s, { guide = false } = {}) {
   const female = isFemale(s);
   const events = [];
   const labels = [];
+  const listen = s.accomp === 'once' && !ex.noListen;
+  const pat = patternBeats(ex) * beat;
+  const duration = 2 * beat + (listen ? pat + beat : 0) + pat + 0.75 * beat;
   // Intro: tonic (or dem) with the first sung note on top, then a breath.
   const first = root + ex.notes[0];
-  if (ex.acc === 'dem') {
+  if (ex.isTm) {
+    const dem = demFor(root);
+    events.push({ kind: 'drone', midis: dem.midis, levels: dem.levels, t: 0, dur: duration - 0.1, vel: 0.55 });
+    events.push({ kind: 'note', midi: root - 12, t: 0, dur: beat * 1.2, vel: 0.3 });
+    events.push({ kind: 'note', midi: first - 12, t: 0.024, dur: beat * 1.2, vel: 0.28 });
+  } else if (ex.acc === 'dem') {
     events.push({ kind: 'chord', midis: [root - 12, root - 5], t: 0, dur: beat * 1.6, vel: 0.26, spread: 0 });
   } else {
     const { bass, rh } = voice(root, mode, mode === 'minor' ? 'i' : 'I', female);
@@ -144,7 +170,6 @@ export function buildRep(ex, root, s, { guide = false } = {}) {
   events.push({ kind: 'note', midi: first, t: 0.02, dur: beat * 1.2, vel: 0.42 });
 
   let t = 2 * beat;
-  const listen = s.accomp === 'once' && !ex.noListen;
   if (listen) {
     t += accompany(ex, root, s, t, beat, events, [], true);
     t += beat;
@@ -157,16 +182,24 @@ export function buildRep(ex, root, s, { guide = false } = {}) {
   for (let i = 0; i < n; i++) {
     const d = beatsOf(ex, i, n) * beat;
     const sound = ex.staccato ? d * 0.45 : d;
-    targets.push({ midi: root + ex.notes[i], t0: tt, t1: tt + sound, syl: ex.syl ? ex.syl[i] : null });
+    targets.push({ midi: root + ex.notes[i], t0: tt, t1: tt + sound, syl: ex.syl ? ex.syl[i] : null, perde: ex.perde ? ex.perde[i] : null });
     tt += d;
   }
   if (ex.clicks) {
     for (let c = singStart; c < singStart + singLen - 1e-6; c += beat) events.push({ kind: 'click', t: c, accent: c === singStart });
   }
   const singEnd = singStart + singLen;
+  let perdeLines = null;
+  if (ex.isTm) {
+    const kMin = Math.min(...ex.komas);
+    const kMax = Math.max(...ex.komas);
+    perdeLines = scaleLines(ex.sc, kMin - 6, kMax + 6).map((p) => ({ midi: root + k2st(p.k), name: p.name, karar: p.k % 53 === 0 }));
+  }
   return {
-    kind: 'pattern', ex, root, label: noteName(root), events, labels, targets, listen,
-    singStart, singEnd, beat, duration: singEnd + 0.75 * beat, guide: guide && !listen,
+    kind: 'pattern', ex, root,
+    label: ex.isTm ? `${ex.kararName} = ${noteName(root)}` : noteName(root),
+    events, labels, targets, listen, perdeLines,
+    singStart, singEnd, beat, duration, guide: guide && !listen,
   };
 }
 
@@ -174,23 +207,44 @@ export function resolveGlideNote([base, off], s) {
   return (base === 'lo' ? s.lo : s.hi) + off;
 }
 
-export function buildGlide(ex, s, repIndex = 0) {
+/** Seconds for one sweep: wider ranges take longer at the same speed. */
+export function glideSweep(ex, s) {
+  const g = ex.glide;
+  const span = Math.abs(resolveGlideNote(g.to, s) - resolveGlideNote(g.from, s));
+  return Math.min(g.max || 8, Math.max(g.min || 2.5, span / (g.rate || 3)));
+}
+
+/**
+ * One siren: the piano gives the start note, then a soft guide tone slides along the
+ * path over a dem on the lowest note, with piano anchors at the turning points.
+ */
+export function buildGlide(ex, s, repIndex = 0, { guide = true } = {}) {
   const g = ex.glide;
   const a = resolveGlideNote(g.from, s);
   const b = resolveGlideNote(g.to, s);
-  const lead = 1.5;
-  const path = [{ t: lead, midi: a }, { t: lead + g.sec, midi: b }];
-  if (g.shape === 'updown') path.push({ t: lead + 2 * g.sec, midi: a });
+  const sec = glideSweep(ex, s);
+  const lead = 1.6;
+  const path = [{ t: lead, midi: a }, { t: lead + sec, midi: b }];
+  if (g.shape === 'updown') path.push({ t: lead + 2 * sec, midi: a });
   const end = path[path.length - 1].t;
+  const low = Math.min(a, b);
+  const events = [
+    { kind: 'note', midi: a, t: 0, dur: 0.9, vel: 0.45 },
+    { kind: 'note', midi: a - 12, t: 0.01, dur: 0.9, vel: 0.28 },
+    { kind: 'drone', midis: [low - 12], levels: [1], t: 0.05, dur: end + 0.5, vel: 0.36 },
+  ];
+  path.forEach((q, i) => {
+    if (i === 0) return;
+    events.push({ kind: 'note', midi: q.midi, t: q.t, dur: 0.8, vel: 0.24 });
+  });
+  if (guide) events.push({ kind: 'glide', points: path, t: 0, vel: 0.5 });
   return {
-    kind: 'glide', ex, root: a, label: `${repIndex + 1}/${g.reps}`,
-    events: [
-      { kind: 'note', midi: a, t: 0, dur: 0.7, vel: 0.45 },
-      { kind: 'note', midi: b, t: 0.55, dur: 0.6, vel: 0.32 },
-    ],
-    labels: [], targets: [], path, singStart: lead, singEnd: end, duration: end + 1.0,
+    kind: 'glide', ex, root: a, label: `${repIndex + 1}/${g.reps}`, guide,
+    events, labels: [], targets: [], path, sweep: sec, singStart: lead, singEnd: end, duration: end + 1.0,
   };
 }
+
+export const glideSeconds = (ex, s) => ex.glide.reps * (buildGlide(ex, s).duration + REP_GAP);
 
 export function sustainNotes(ex, s) {
   const notes = isFemale(s) ? ex.female : ex.male;
@@ -198,6 +252,12 @@ export function sustainNotes(ex, s) {
   for (const m of notes) for (let r = 0; r < (ex.reps || 1); r++) out.push(m);
   return out;
 }
+
+/** A held note on one breath: cue, inhale, the hold itself (grows with practice), a short rest. */
+export const SUSTAIN_SEC = 26;
+
+const IV_SING = [1.4, 3.9];
+export const INTERVAL_SEC = IV_SING[1] + 2.4 + REP_GAP;
 
 /** Interval trial: base note, a window to sing, then the piano plays the answer. */
 export function buildIntervalTrial(ex, s, rnd = Math.random) {
@@ -209,8 +269,7 @@ export function buildIntervalTrial(ex, s, rnd = Math.random) {
     const base = s.lo + 1 + Math.floor(rnd() * Math.max(1, span));
     const target = base + dir * iv.st;
     if (target < s.lo || target > s.hi - 1) continue;
-    const singStart = 1.4;
-    const singEnd = 3.9;
+    const [singStart, singEnd] = IV_SING;
     return {
       kind: 'interval', ex, root: base, label: `${noteName(base)} → ${iv.name} ${dir > 0 ? 'yukarı' : 'aşağı'}`,
       interval: iv, dir,

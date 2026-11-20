@@ -1,7 +1,7 @@
-import { h, clear, icon, segmented, fmtDuration, fmtMinutes } from './nyxk7bs.js';
+import { h, clear, icon, toast, segmented, fmtDuration, fmtEst } from './nyxk7bs.js';
 import { openOverlay, requestClose, runStep, summaryLines, ratingPanel, exMeta } from './uhyk5uj.js';
 import { db } from './f36qmgd.js';
-import { byId } from './d8hbkej.js';
+import { byId, resolveEx } from './d8hbkej.js';
 import { stepLabel, stepCatLabel } from './rdjz6js.js';
 import { audio } from './qpy3wmh.js';
 
@@ -21,18 +21,24 @@ const summaryList = (lines) => (lines.length
 export function runSingle(step, { onFinish } = {}) {
   let current = null;
   const root = openOverlay(() => current?.abort());
-  const title = step.cat === 'mix' ? stepLabel(step) : byId[step.exId].title;
+  const title = stepLabel(step);
   const go = () => {
     current = runStep(root, step);
-    current.promise.then(({ completed, results, exIds }) => {
+    current.promise.then(({ completed, results, exIds, sec }) => {
       current = null;
       onFinish?.();
-      if (root.hidden) return;
+      if (root.hidden) {
+        const saved = results.reduce((a, r) => a + (r.sec || 0), 0);
+        if (results.length && saved) toast(`Yarıda kaldı: ${fmtDuration(saved)} çalışma kaydedildi.`);
+        return;
+      }
       const actions = h('div', { class: 'row' },
         h('button', { class: 'btn ghost', type: 'button', onclick: go }, 'Yeniden'),
         completed ? null : h('button', { class: 'btn', type: 'button', onclick: requestClose }, 'Kapat'));
+      const lines = summaryLines(results);
       shell(root, title,
-        summaryList(summaryLines(results)),
+        completed ? null : h('p', { class: 'muted' }, 'Yarıda bıraktın; buraya kadar yaptığın kaydedildi.'),
+        summaryList(lines.length ? lines : sec >= 1 ? [['Süre', fmtDuration(sec)]] : []),
         completed ? ratingPanel({ exIds, onDone: requestClose }) : null,
         actions);
     });
@@ -55,13 +61,14 @@ export function runSession(session, { onChange } = {}) {
   function stepList() {
     return h('ol', { class: 'step-list' }, steps.map((st, k) => h('li', {
       class: session.done[k] ? 'done' : session.skipped?.[k] ? 'skipped' : k === session.idx ? 'current' : '',
-    }, h('span', { class: 'step-name' }, stepLabel(st)), h('span', { class: 'step-meta' }, session.done[k] ? icon('check', 18) : fmtMinutes(st.estSec)))));
+    }, h('span', { class: 'step-name' }, stepLabel(st)), h('span', { class: 'step-meta' },
+      session.stepSec?.[k] ? [session.done[k] ? icon('check', 16) : null, fmtDuration(session.stepSec[k])] : session.done[k] ? icon('check', 18) : fmtEst(st.estSec)))));
   }
 
   function interstitial() {
     if (closed) return;
     const st = steps[session.idx];
-    const exs = st.cat === 'mix' ? st.exIds.map((id) => byId[id]) : [byId[st.exId]];
+    const exs = st.cat === 'mix' ? st.exIds.map((id) => byId[id]) : [resolveEx(byId[st.exId], st.tm)];
     const blocked = st.blockedIds?.length ? h('p', { class: 'muted small' }, 'Yeni egzersizler önce tek başına çalışılır; üç seanstan sonra karışık sıraya girer.') : null;
     const mixNote = st.interleaved ? h('p', { class: 'muted small' }, 'Bu blokta egzersizler birkaç tonda bir dönüşümlü gelir. İlk anda zor hissettirir ama öğrenilenin kalıcılığını artırır.') : null;
     clear(root, h('div', { class: 'run inter' },
@@ -72,7 +79,7 @@ export function runSession(session, { onChange } = {}) {
       h('div', { class: 'inter-body' },
         h('p', { class: 'muted' }, 'Sıradaki'),
         h('h2', { class: 'inter-title' }, stepLabel(st)),
-        h('p', { class: 'inter-meta' }, `${stepCatLabel(st)}, yaklaşık ${fmtMinutes(st.estSec)}`),
+        h('p', { class: 'inter-meta' }, `${stepCatLabel(st)}, yaklaşık ${fmtEst(st.estSec)}`),
         exs.map((ex) => h('div', { class: 'inter-ex' },
           exs.length > 1 ? h('h3', null, ex.title) : null,
           ex.vowel ? h('p', { class: 'muted' }, `Ses: ${ex.vowel}`) : null,
@@ -101,11 +108,17 @@ export function runSession(session, { onChange } = {}) {
   async function runCurrent() {
     const startedAt = Date.now();
     current = runStep(root, steps[session.idx], { sessionId: session.id });
-    const { completed, results, exIds } = await current.promise;
+    const { completed, results, exIds, sec } = await current.promise;
     current = null;
     session.activeSec = (session.activeSec || 0) + (Date.now() - startedAt) / 1000;
-    if (closed) return;
-    if (completed || results.length) session.done[session.idx] = true;
+    (session.stepSec ||= [])[session.idx] = (session.stepSec[session.idx] || 0) + (sec || 0);
+    if (completed || results.some((r) => r.kind !== 'time')) session.done[session.idx] = true;
+    if (closed) {
+      await save();
+      onChange?.();
+      if (results.length && sec >= 1) toast(`Seans duraklatıldı: bu adımda ${fmtDuration(sec)} çalışma kaydedildi.`);
+      return;
+    }
     save();
     const st = steps[session.idx];
     if (completed && st.kind !== 'free') {
@@ -125,7 +138,10 @@ export function runSession(session, { onChange } = {}) {
     let fatigue = 2;
     const note = h('textarea', { class: 'input', rows: 3, placeholder: 'Bugün ne iyi gitti, neye dikkat etmeli?', id: 'session-note' });
     shell(root, 'Seans bitti',
-      summaryList([['Süre', fmtDuration(session.activeSec || 0)], ...summaryLines(mine)]),
+      summaryList([
+        ['Seans süresi', fmtDuration(session.activeSec || 0)],
+        ['Egzersizlerde', fmtDuration(mine.reduce((a, r) => a + (r.sec || 0), 0))],
+        ...summaryLines(mine, { total: false })]),
       h('div', { class: 'checkout' },
         h('div', { class: 'field' }, h('span', null, 'Ses üretmek ne kadar zahmetliydi?'),
           segmented([[1, '1'], [2, '2'], [3, '3'], [4, '4'], [5, '5']], effort, (v) => { effort = v; }, 'Efor'),

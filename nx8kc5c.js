@@ -1,10 +1,10 @@
-import { h, clear, segmented, fmtMinutes, fmtDate, dayKey } from './nyxk7bs.js';
+import { h, clear, segmented, fmtMinutes, fmtEst, fmtDuration, fmtDate, dayKey } from './nyxk7bs.js';
 import { db, settings, saveSettings } from './f36qmgd.js';
-import { generatePlan, stepLabel, stepCatLabel } from './rdjz6js.js';
+import { generatePlan, stepLabel, stepCatLabel, ofDayText } from './rdjz6js.js';
 import { runSession } from './amcnm9m.js';
 import { ensureAudio } from './qpy3wmh.js';
 import { lineChart } from './zvga6p5.js';
-import { byId } from './d8hbkej.js';
+import { byId, CATS } from './d8hbkej.js';
 
 const WEEKDAYS = ['Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct', 'Pz'];
 
@@ -30,17 +30,17 @@ export async function renderToday(main) {
   renderProgress(progress, { sessions, results });
 }
 
-function stepRows(steps, states = []) {
+function stepRows(steps, states = [], secs = []) {
   return h('ol', { class: 'step-list plain' }, steps.map((st, k) => h('li', { class: states[k] || '' },
     h('span', { class: 'step-name' }, stepLabel(st), stepCatLabel(st) !== stepLabel(st) ? h('small', null, stepCatLabel(st)) : null),
-    h('span', { class: 'step-meta' }, fmtMinutes(st.estSec)))));
+    h('span', { class: 'step-meta' }, secs[k] ? fmtDuration(secs[k]) : fmtEst(st.estSec)))));
 }
 
 function renderResume(box, session, rerender) {
   const states = session.plan.steps.map((_, k) => (session.done[k] ? 'done' : session.skipped?.[k] ? 'skipped' : k === session.idx ? 'current' : ''));
   clear(box,
     h('p', null, `${session.idx}/${session.plan.steps.length} adım tamamlandı.`),
-    stepRows(session.plan.steps, states),
+    stepRows(session.plan.steps, states, session.stepSec || []),
     h('div', { class: 'row' },
       h('button', { class: 'btn primary big', type: 'button', onclick: () => { ensureAudio(); runSession(session, { onChange: rerender }); } }, 'Devam et'),
       h('button', {
@@ -56,11 +56,13 @@ function renderPlanner(box, { results, sessions, rerender, doneToday }) {
   const list = h('div');
   const reason = h('p', { class: 'note' });
   const total = h('span', { class: 'muted' });
+  const ofDay = h('p', { class: 'muted' });
 
   const regen = () => {
     plan = generatePlan({ minutes, settings, results, sessions, energy });
     reason.textContent = plan.reason || '';
     reason.hidden = !plan.reason;
+    ofDay.textContent = `Plan Batı ve Türk müziği çalışmasını birlikte içerir. ${ofDayText(plan.ofDay)}`;
     total.textContent = `Toplam yaklaşık ${fmtMinutes(plan.estSec)}`;
     clear(list, stepRows(plan.steps));
   };
@@ -81,6 +83,7 @@ function renderPlanner(box, { results, sessions, rerender, doneToday }) {
     h('div', { class: 'field' }, h('span', null, 'Sesin şu an nasıl?'),
       segmented([['dinc', 'Dinç'], ['normal', 'Normal'], ['yorgun', 'Yorgun']], energy, (v) => { energy = v; regen(); }, 'Ses durumu')),
     reason,
+    ofDay,
     list,
     h('div', { class: 'row spread' },
       total,
@@ -114,8 +117,15 @@ function renderProgress(box, { sessions, results }) {
   }
   const weekAgo = now - 7 * 86400e3;
   const week = sessions.filter((s) => s.finishedAt && s.finishedAt > weekAgo);
-  const weekMin = Math.round(week.reduce((a, s) => a + (s.activeSec || 0), 0) / 60);
   const activeDays = Object.keys(days).filter((k) => k >= dayKey(weekAgo)).length;
+  // Working time from the per-exercise timers, split by tradition.
+  const byTrad = { bati: 0, tm: 0, ortak: 0 };
+  for (const r of results) {
+    if (!r.sec || !r.at || r.at < weekAgo) continue;
+    const t = r.tm ? 'tm' : CATS[byId[r.exId]?.cat]?.trad || 'ortak';
+    byTrad[t] += r.sec;
+  }
+  const weekSec = byTrad.bati + byTrad.tm + byTrad.ortak;
 
   const charts = [];
   const ratings = results.filter((r) => r.kind === 'rating');
@@ -125,13 +135,14 @@ function renderProgress(box, { sessions, results }) {
   charts.push(chartBlock('Entonasyon, kulağına göre', 'Kendi notunun günlük ortalaması (1–5)', tunePts, (v) => v.toFixed(1).replace('.', ','), 1, 5));
   const mptPts = series(results.filter((r) => r.exId === 'vfe-1' && r.kind === 'sustain'), (rs) => Math.max(...rs.map((r) => r.best)));
   charts.push(chartBlock('VFE 1 süresi', 'Günün en uzun “i” sesi, saniye', mptPts, (v) => `${Math.round(v)} sn`));
-  const sovtDays = new Set(results.filter((r) => ['sovt', 'sovt-tm'].includes(byId[r.exId]?.cat)).map((r) => dayKey(r.at)));
+  const sovtDays = new Set(results.filter((r) => ['sovt', 'tm-sus', 'sovt-tm'].includes(byId[r.exId]?.cat) || byId[r.exId]?.res).map((r) => dayKey(r.at)));
   const sovtWeek = [...sovtDays].filter((k) => k >= dayKey(now - 7 * 86400e3)).length;
   const rangeText = `Son 7 günde ${sovtWeek} gün yarı kapalı ses yolu çalıştın.`;
 
   clear(box,
     h('h2', null, 'İlerleme'),
-    h('p', { class: 'stats' }, `Son 7 gün: ${activeDays} gün çalıştın, ${week.length} seans, ${weekMin} dk.`),
+    h('p', { class: 'stats' }, `Son 7 gün: ${activeDays} gün çalıştın, ${week.length} seans, egzersizlerde ${fmtDuration(weekSec)}.`),
+    weekSec ? h('p', { class: 'muted' }, `Batı ${fmtDuration(byTrad.bati)}, Türk müziği ${fmtDuration(byTrad.tm)}, ortak (SOVT, VFE, soğuma, repertuvar) ${fmtDuration(byTrad.ortak)}.`) : null,
     h('div', { class: 'cal-wrap' },
       h('div', { class: 'cal-head' }, WEEKDAYS.map((d) => h('span', null, d))),
       h('div', { class: 'cal-grid', role: 'img', 'aria-label': 'Son dört haftanın çalışma günleri' }, cells)),

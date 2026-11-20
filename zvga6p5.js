@@ -39,6 +39,42 @@ export function makeY(min, max, top, bottom) {
   return (m) => bottom - ((m - min) / span) * (bottom - top);
 }
 
+/** Perde lines for Turkish-music reps: one line per scale degree, named on the left. */
+function drawPerde(g, { w, min, max, y, left, right, lines }) {
+  const p = pal();
+  g.font = '600 11px "Atkinson Hyperlegible Next", system-ui, sans-serif';
+  g.textBaseline = 'middle';
+  g.textAlign = 'right';
+  for (let m = Math.ceil(min); m <= Math.floor(max); m++) {
+    const yy = Math.round(y(m)) + 0.5;
+    g.strokeStyle = p.grid;
+    g.lineWidth = 0.5;
+    g.beginPath();
+    g.moveTo(left, yy);
+    g.lineTo(w - right, yy);
+    g.stroke();
+  }
+  const shown = lines.filter((ln) => ln.midi >= min && ln.midi <= max);
+  for (const ln of shown) {
+    const yy = Math.round(y(ln.midi)) + 0.5;
+    g.strokeStyle = ln.karar ? alpha(p.target, 0.5) : alpha(p.muted, 0.35);
+    g.lineWidth = ln.karar ? 1.4 : 1;
+    g.beginPath();
+    g.moveTo(left, yy);
+    g.lineTo(w - right, yy);
+    g.stroke();
+  }
+  // Karar names first, then the others where they fit.
+  const used = [];
+  for (const ln of [...shown.filter((l) => l.karar), ...shown.filter((l) => !l.karar)]) {
+    const yy = Math.round(y(ln.midi)) + 0.5;
+    if (used.some((u) => Math.abs(u - yy) < 11)) continue;
+    used.push(yy);
+    g.fillStyle = ln.karar ? p.ink : p.muted;
+    g.fillText(ln.name, left - 6, yy);
+  }
+}
+
 export function drawGrid(g, { w, min, max, y, left, right, rootPc = null, labels = true }) {
   const p = pal();
   const per = Math.abs(y(min) - y(min + 1));
@@ -102,7 +138,7 @@ export function drawRep(canvas, { rep, t, hideTargets = false, lane = false, mar
   const { g, w, h } = fitCanvas(canvas);
   const p = pal();
   g.clearRect(0, 0, w, h);
-  const left = 48;
+  const left = rep.perdeLines ? 86 : 48;
   const right = 14;
   const chordBand = rep.labels?.length ? 26 : 6;
   const laneH = lane ? Math.round(h * 0.18) : 0;
@@ -117,7 +153,11 @@ export function drawRep(canvas, { rep, t, hideTargets = false, lane = false, mar
   const y = makeY(min, max, top, bottom);
   const dur = rep.duration;
   const x = (tt) => left + (tt / dur) * (w - left - right);
-  drawGrid(g, { w, min, max, y, left, right, rootPc: rep.kind === 'glide' ? null : ((Math.round(rep.root) % 12) + 12) % 12 });
+  if (rep.perdeLines) {
+    drawPerde(g, { w, min, max, y, left, right, lines: rep.perdeLines });
+  } else {
+    drawGrid(g, { w, min, max, y, left, right, rootPc: rep.kind === 'glide' ? null : ((Math.round(rep.root) % 12) + 12) % 12 });
+  }
 
   // Listening and intro time are shaded.
   if (rep.singStart > 0.2) {
@@ -134,7 +174,8 @@ export function drawRep(canvas, { rep, t, hideTargets = false, lane = false, mar
       const next = rep.labels[i + 1]?.t ?? rep.singEnd;
       const active = t >= lb.t && t < next;
       g.fillStyle = active ? p.ink : p.muted;
-      g.fillText(lb.text, x(lb.t) + 2, 14);
+      const tw = g.measureText(lb.text).width;
+      g.fillText(lb.text, Math.max(left, Math.min(x(lb.t) + 2, w - right - tw)), 14);
       g.strokeStyle = alpha(p.muted, 0.5);
       g.lineWidth = 1;
       g.beginPath();

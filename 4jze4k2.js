@@ -115,7 +115,9 @@ export function renderSettings(main) {
       field('Melodi', segmented([['fade', 'İlk iki tonda'], ['always', 'Hep'], ['never', 'Hiç']], settings.guide, (v) => saveSettings({ guide: v }), 'Melodi kılavuzu'),
         'Piyano akorların üstünde söyleyeceğin melodiyi de çalar. “İlk iki tonda”: her egzersizin başında duyarsın, sonra yalnızca akorlar kalır ve kulağın kendi başına çalışır.'),
       field('Akış', segmented([['akor', 'Akorla söyle'], ['once', 'Önce dinle, sonra söyle']], settings.accomp, (v) => saveSettings({ accomp: v }), 'Akış'),
-        'Önce dinle: piyano her tonda kalıbı bir kez çalar, sonra sen akorlarla birlikte söylersin. Yeni egzersizlerde işe yarar; süreyi uzatır.'),
+        'Önce dinle: piyano her tonda kalıbı bir kez çalar, sonra sen akorlarla birlikte söylersin. Türk müziğinde meşk usulüne benzer. Yeni egzersizlerde işe yarar; süreyi uzatır.'),
+      field('Dem ve kılavuz ses', segmented([[0.6, 'Hafif'], [1, 'Orta'], [1.5, 'Güçlü']], settings.dem, (v) => saveSettings({ dem: v }), 'Dem düzeyi'),
+        'Türk müziği egzersizlerindeki karar demi ile sirenlerdeki kayan kılavuz sesin piyanoya göre yüksekliği.'),
       field('Varsayılan tempo', h('div', { class: 'row' }, tempo, tempoVal))),
 
     h('section', { class: 'set-group' },
