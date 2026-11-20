@@ -135,7 +135,7 @@ export function renderSettings(main) {
           onclick: async () => {
             const data = await exportData();
             const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
-            await saveFile(`etut-yedek-${new Date().toISOString().slice(0, 10)}.json`, blob).catch(() => toast('Yedek kaydedilemedi.'));
+            await saveFile(`vocup-yedek-${new Date().toISOString().slice(0, 10)}.json`, blob).catch(() => toast('Yedek kaydedilemedi.'));
           },
         }, 'Yedeği dışa aktar'),
         h('button', { class: 'btn', type: 'button', onclick: () => fileIn.click() }, 'Yedeği içe aktar'),

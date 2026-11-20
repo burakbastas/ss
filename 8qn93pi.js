@@ -50,7 +50,7 @@ async function boot() {
   clear(nav, ROUTES.map((r) => h('a', { href: `#${r.id}`, 'data-id': r.id }, icon(r.icon), h('span', null, r.label))));
   clear(document.getElementById('app'),
     h('div', { class: 'shell' },
-      h('div', { class: 'brand', 'aria-hidden': 'true' }, h('span', { class: 'brand-mark' }), 'Etüt'),
+      h('div', { class: 'brand', 'aria-hidden': 'true' }, h('span', { class: 'brand-mark' }), 'VocUp'),
       nav,
       main));
   window.addEventListener('hashchange', route);

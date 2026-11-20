@@ -18,6 +18,7 @@ export async function renderToday(main) {
 
   const rerender = () => renderToday(main);
   const top = h('section', { class: 'today-head' },
+    h('div', { class: 'brand-inline', 'aria-hidden': 'true' }, h('span', { class: 'brand-mark' }), 'VocUp'),
     h('p', { class: 'muted' }, fmtDate(Date.now())),
     h('h1', null, open ? 'Yarım kalan seans' : doneToday.length ? 'Bugün çalıştın' : 'Bugünkü çalışma'));
 
