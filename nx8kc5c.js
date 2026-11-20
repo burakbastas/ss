@@ -4,7 +4,7 @@ import { generatePlan, stepLabel, stepCatLabel } from './rdjz6js.js';
 import { runSession } from './amcnm9m.js';
 import { ensureAudio } from './qpy3wmh.js';
 import { lineChart } from './zvga6p5.js';
-import { noteName } from './ewdv3t5.js';
+import { byId } from './d8hbkej.js';
 
 const WEEKDAYS = ['Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct', 'Pz'];
 
@@ -93,7 +93,7 @@ function renderPlanner(box, { results, sessions, rerender, doneToday }) {
 function renderProgress(box, { sessions, results }) {
   const now = Date.now();
   const days = {};
-  for (const r of results) (days[dayKey(r.at)] ||= []).push(r);
+  for (const r of results) if (r.kind !== 'rating') (days[dayKey(r.at)] ||= []).push(r);
 
   // Four-week strip, Monday first.
   const d0 = new Date();
@@ -118,15 +118,16 @@ function renderProgress(box, { sessions, results }) {
   const activeDays = Object.keys(days).filter((k) => k >= dayKey(weekAgo)).length;
 
   const charts = [];
-  const pitchPts = series(results.filter((r) => r.kind === 'pattern' && r.hitRate != null), (rs) => 100 * avg(rs.map((r) => r.hitRate)));
-  charts.push(chartBlock('Perde isabeti', 'Tolerans içindeki notaların günlük ortalaması', pitchPts, (v) => `%${Math.round(v)}`, 0, 100));
-  const mptPts = series(results.filter((r) => r.exId === 'vfe-1'), (rs) => Math.max(...rs.map((r) => r.best)));
+  const ratings = results.filter((r) => r.kind === 'rating');
+  const easePts = series(ratings.filter((r) => r.ease != null), (rs) => avg(rs.map((r) => r.ease)));
+  charts.push(chartBlock('Rahatlık', 'Egzersiz sonrası kendi notunun günlük ortalaması (1–5)', easePts, (v) => v.toFixed(1).replace('.', ','), 1, 5));
+  const tunePts = series(ratings.filter((r) => r.tune != null), (rs) => avg(rs.map((r) => r.tune)));
+  charts.push(chartBlock('Entonasyon, kulağına göre', 'Kendi notunun günlük ortalaması (1–5)', tunePts, (v) => v.toFixed(1).replace('.', ','), 1, 5));
+  const mptPts = series(results.filter((r) => r.exId === 'vfe-1' && r.kind === 'sustain'), (rs) => Math.max(...rs.map((r) => r.best)));
   charts.push(chartBlock('VFE 1 süresi', 'Günün en uzun “i” sesi, saniye', mptPts, (v) => `${Math.round(v)} sn`));
-
-  const glides = results.filter((r) => r.kind === 'glide').sort((a, b) => b.at - a.at);
-  const rangeText = glides.length
-    ? `Son kaymada ulaştığın aralık ${noteName(glides[0].lo)} – ${noteName(glides[0].hi)}. Ayarlardaki çalışma aralığın ${noteName(settings.lo)} – ${noteName(settings.hi)}.`
-    : null;
+  const sovtDays = new Set(results.filter((r) => ['sovt', 'sovt-tm'].includes(byId[r.exId]?.cat)).map((r) => dayKey(r.at)));
+  const sovtWeek = [...sovtDays].filter((k) => k >= dayKey(now - 7 * 86400e3)).length;
+  const rangeText = `Son 7 günde ${sovtWeek} gün yarı kapalı ses yolu çalıştın.`;
 
   clear(box,
     h('h2', null, 'İlerleme'),

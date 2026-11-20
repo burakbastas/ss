@@ -118,3 +118,11 @@ SOFTWARE.
 
 
 fft.js: Copyright Fedor Indutny. MIT License (same terms as above).
+
+
+----
+Piano samples (shortened to 5 s, mono):
+Salamander Grand Piano by Alexander Holm, CC BY 3.0 https://creativecommons.org/licenses/by/3.0/ (via Tone.js audio).
+Musyng Kite soundfont, CC BY-SA 3.0 https://creativecommons.org/licenses/by-sa/3.0/ (via gleitz/midi-js-soundfonts). Shortened versions are shared under the same license.
+FluidR3_GM soundfont by Frank Wen, CC BY 3.0 (via gleitz/midi-js-soundfonts).
+tonejs-instruments piano samples by Nicholaus Brosowsky, CC BY 3.0.

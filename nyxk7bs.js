@@ -4,7 +4,12 @@ export function h(tag, attrs, ...kids) {
     for (const [k, v] of Object.entries(attrs)) {
       if (v == null || v === false) continue;
       if (k === 'class') el.className = v;
-      else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+      else if (k === 'style' && typeof v === 'object') {
+        for (const [prop, val] of Object.entries(v)) {
+          if (prop.startsWith('--')) el.style.setProperty(prop, String(val));
+          else el.style[prop] = val;
+        }
+      }
       else if (k.startsWith('on') && typeof v === 'function') el.addEventListener(k.slice(2), v);
       else if (k === 'html') el.innerHTML = v;
       else if (v === true) el.setAttribute(k, '');
@@ -32,6 +37,7 @@ const ICONS = {
   today: '<path d="M4 9h16M8 3v4M16 3v4"/><rect x="4" y="5" width="16" height="15" rx="3"/><path d="M9 14l2 2 4-4"/>',
   list: '<path d="M9 6h11M9 12h11M9 18h11"/><circle cx="4.5" cy="6" r="1.2"/><circle cx="4.5" cy="12" r="1.2"/><circle cx="4.5" cy="18" r="1.2"/>',
   mirror: '<path d="M2 12h3l2-6 3 12 3-9 2 5 2-2h5"/>',
+  keys: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M8 5v14M13 5v14M18 5v14"/><path d="M6.5 5v7h3V5M15.5 5v7h3V5" fill="currentColor"/>',
   rec: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5" fill="currentColor"/>',
   settings: '<path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',

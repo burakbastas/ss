@@ -48,15 +48,12 @@ export const DEFAULTS = {
   hi: 69,
   a4: 440,
   noteNames: 'solfege',
-  tolerance: 25,
-  feedback: 'azalan',
+  piano: 'sal',
+  guide: 'fade',
   accomp: 'akor',
   tempo: 1,
   volume: 0.8,
-  gateDb: -52,
-  inputId: '',
   outputId: '',
-  latencyMs: 0,
   theme: 'auto',
   sessionMin: 30,
 };
@@ -67,6 +64,7 @@ export async function loadSettings() {
   try {
     const saved = await db.get('kv', 'settings');
     if (saved) Object.assign(settings, saved);
+    if (!['akor', 'once'].includes(settings.accomp)) settings.accomp = 'akor';
   } catch { /* first run or private mode */ }
   return settings;
 }
@@ -99,6 +97,7 @@ export async function importData(data) {
   }
   if (data.settings) {
     const { inputId, outputId, ...portable } = data.settings;
+    if (!['akor', 'once'].includes(portable.accomp)) delete portable.accomp;
     await saveSettings(portable);
   }
 }

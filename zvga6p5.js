@@ -94,16 +94,20 @@ export function voicePath(g, pts, x, y, maxGap = 0.12) {
   g.stroke();
 }
 
-/** Piano-roll view of one repetition with the live voice trace. */
-export function drawRep(canvas, { rep, samples, t, showVoice, cur, tol, lane, hideTargets = false, statuses = null }) {
+/**
+ * Piano-roll view of one repetition: chord names on top, notes to sing as bars that
+ * fill with gold as the playhead passes, a glide path, and a dynamics lane for messa.
+ */
+export function drawRep(canvas, { rep, t, hideTargets = false, lane = false, marks = null }) {
   const { g, w, h } = fitCanvas(canvas);
   const p = pal();
   g.clearRect(0, 0, w, h);
   const left = 48;
   const right = 14;
-  const laneH = lane ? Math.round(h * 0.2) : 0;
-  const top = 14;
-  const bottom = h - 16 - laneH;
+  const chordBand = rep.labels?.length ? 26 : 6;
+  const laneH = lane ? Math.round(h * 0.18) : 0;
+  const top = 10 + chordBand;
+  const bottom = h - 14 - laneH;
   let notes = rep.targets.map((tg) => tg.midi);
   if (rep.ref) notes.push(rep.ref.midi);
   if (rep.path) notes = notes.concat(rep.path.map((q) => q.midi));
@@ -115,135 +119,122 @@ export function drawRep(canvas, { rep, samples, t, showVoice, cur, tol, lane, hi
   const x = (tt) => left + (tt / dur) * (w - left - right);
   drawGrid(g, { w, min, max, y, left, right, rootPc: rep.kind === 'glide' ? null : ((Math.round(rep.root) % 12) + 12) % 12 });
 
+  // Listening and intro time are shaded.
+  if (rep.singStart > 0.2) {
+    g.fillStyle = alpha(p.line, 0.28);
+    g.fillRect(left, top, x(rep.singStart) - left, bottom - top);
+  }
+
+  // Chord names
+  if (rep.labels?.length) {
+    g.font = '600 12px "Atkinson Hyperlegible Next", system-ui, sans-serif';
+    g.textBaseline = 'middle';
+    g.textAlign = 'left';
+    rep.labels.forEach((lb, i) => {
+      const next = rep.labels[i + 1]?.t ?? rep.singEnd;
+      const active = t >= lb.t && t < next;
+      g.fillStyle = active ? p.ink : p.muted;
+      g.fillText(lb.text, x(lb.t) + 2, 14);
+      g.strokeStyle = alpha(p.muted, 0.5);
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(Math.round(x(lb.t)) + 0.5, 6);
+      g.lineTo(Math.round(x(lb.t)) + 0.5, 22);
+      g.stroke();
+    });
+  }
+
   const per = Math.abs(y(0) - y(1));
-  const bh = Math.max(7, Math.min(22, per * 0.72));
-  const current = rep.targets.find((tg) => t >= tg.t0 && t < tg.t1);
-  const curOk = showVoice && current && cur != null && Math.abs((cur - current.midi) * 100) <= tol;
+  const bh = Math.max(8, Math.min(24, per * 0.74));
   if (rep.ref) {
     const x0 = x(rep.ref.t0);
     roundRect(g, x0, y(rep.ref.midi) - bh / 2, x(rep.ref.t1) - x0, bh, 5);
-    g.fillStyle = alpha(p.muted, 0.35);
+    g.fillStyle = alpha(p.muted, 0.4);
     g.fill();
+  }
+  if (rep.path) {
+    g.strokeStyle = alpha(p.target, 0.4);
+    g.lineWidth = Math.max(7, bh * 0.75);
+    g.lineCap = 'round';
+    g.lineJoin = 'round';
+    g.beginPath();
+    rep.path.forEach((q, i) => (i ? g.lineTo(x(q.t), y(q.midi)) : g.moveTo(x(q.t), y(q.midi))));
+    g.stroke();
+    // Gold progress along the path
+    if (t > rep.path[0].t) {
+      g.save();
+      g.beginPath();
+      g.rect(0, 0, x(Math.min(t, rep.singEnd)), h);
+      g.clip();
+      g.strokeStyle = p.voice;
+      g.lineWidth = Math.max(4, bh * 0.4);
+      g.beginPath();
+      rep.path.forEach((q, i) => (i ? g.lineTo(x(q.t), y(q.midi)) : g.moveTo(x(q.t), y(q.midi))));
+      g.stroke();
+      g.restore();
+    }
   }
   rep.targets.forEach((tg, i) => {
     if (hideTargets) return;
-    const st = statuses ? statuses[i] : null;
-    const stColor = st === 'hit' ? p.hit : st === 'near' ? p.near : st === 'miss' ? p.miss : null;
     const x0 = x(tg.t0);
     const x1 = Math.max(x0 + 6, x(tg.t1));
     const yy = y(tg.midi);
-    const isCur = tg === current;
+    const isCur = t >= tg.t0 && t < tg.t1;
+    const mark = marks ? marks[i] : null;
     roundRect(g, x0, yy - bh / 2, x1 - x0, bh, 5);
-    if (stColor) {
-      g.fillStyle = alpha(stColor, 0.5);
-      g.fill();
-      g.strokeStyle = stColor;
-    } else {
-      g.fillStyle = isCur && curOk ? alpha(p.hit, 0.55) : alpha(p.target, isCur ? 0.42 : 0.24);
-      g.fill();
-      g.strokeStyle = alpha(isCur && curOk ? p.hit : p.target, isCur ? 0.95 : 0.6);
-    }
-    g.lineWidth = 1.2;
+    g.fillStyle = alpha(mark === 'hit' ? p.hit : mark === 'miss' ? p.miss : p.target, isCur ? 0.38 : 0.22);
+    g.fill();
+    g.strokeStyle = alpha(mark === 'hit' ? p.hit : mark === 'miss' ? p.miss : p.target, isCur ? 0.95 : 0.55);
+    g.lineWidth = isCur ? 1.6 : 1.1;
     g.stroke();
+    if (t > tg.t0) {
+      const fx = Math.min(x1, x(t));
+      g.save();
+      roundRect(g, x0, yy - bh / 2, x1 - x0, bh, 5);
+      g.clip();
+      g.fillStyle = alpha(p.voice, isCur ? 0.95 : 0.55);
+      g.fillRect(x0, yy - bh / 2, fx - x0, bh);
+      g.restore();
+    }
     if (tg.syl) {
       g.fillStyle = p.ink;
       g.font = '600 13px "Atkinson Hyperlegible Next", system-ui, sans-serif';
       g.textAlign = 'left';
       g.textBaseline = 'middle';
-      g.fillText(tg.syl, x0 + 6, yy - bh / 2 - 9);
+      g.fillText(tg.syl, x0 + 2, yy - bh / 2 - 10);
     }
   });
-  if (rep.path) {
-    g.strokeStyle = alpha(p.target, 0.45);
-    g.lineWidth = Math.max(6, bh * 0.7);
-    g.lineCap = 'round';
-    g.beginPath();
-    rep.path.forEach((q, i) => (i ? g.lineTo(x(q.t), y(q.midi)) : g.moveTo(x(q.t), y(q.midi))));
-    g.stroke();
-  }
-  // Sing window shading before it starts.
-  if (rep.singStart > 0.2) {
-    g.fillStyle = alpha(p.line, 0.25);
-    g.fillRect(left, top, x(rep.singStart) - left, bottom - top);
-  }
-  if (showVoice) {
-    g.save();
-    g.beginPath();
-    g.rect(left, top - 6, w - left - right, bottom - top + 12);
-    g.clip();
-    voicePath(g, samples, x, y);
-    g.restore();
-  }
+
   // Playhead
   const px = Math.round(x(Math.min(t, dur))) + 0.5;
-  g.strokeStyle = alpha(p.ink, 0.5);
+  g.strokeStyle = alpha(p.ink, 0.55);
   g.lineWidth = 1;
   g.beginPath();
   g.moveTo(px, top - 6);
   g.lineTo(px, bottom + 6);
   g.stroke();
 
-  if (lane) drawLane(g, { samples, x, left, right, w, top: h - laneH - 4, h: laneH - 4, target: rep.targets[0], showVoice });
-}
-
-function drawLane(g, { samples, x, left, right, w, top, h, target, showVoice }) {
-  const p = pal();
-  g.fillStyle = alpha(p.line, 0.35);
-  g.fillRect(left, top, w - left - right, h);
-  if (!target) return;
-  const x0 = x(target.t0);
-  const x1 = x(target.t1);
-  g.setLineDash([5, 5]);
-  g.strokeStyle = alpha(p.target, 0.9);
-  g.lineWidth = 1.5;
-  g.beginPath();
-  g.moveTo(x0, top + h - 3);
-  g.lineTo((x0 + x1) / 2, top + 4);
-  g.lineTo(x1, top + h - 3);
-  g.stroke();
-  g.setLineDash([]);
-  if (!showVoice) return;
-  const yDb = (db) => top + h - 3 - Math.max(0, Math.min(1, (db + 62) / 50)) * (h - 7);
-  g.strokeStyle = p.voice;
-  g.lineWidth = 2;
-  g.beginPath();
-  let started = false;
-  for (const s of samples) {
-    if (s.t < target.t0 - 0.3 || s.t > target.t1 + 0.3) continue;
-    if (!started) { g.moveTo(x(s.t), yDb(s.db)); started = true; } else g.lineTo(x(s.t), yDb(s.db));
+  if (lane && rep.targets[0]) {
+    const tg = rep.targets[0];
+    const lt = h - laneH - 4;
+    const lh = laneH - 4;
+    g.fillStyle = alpha(p.line, 0.35);
+    g.fillRect(left, lt, w - left - right, lh);
+    const x0 = x(tg.t0);
+    const x1 = x(tg.t1);
+    g.fillStyle = alpha(p.target, 0.25);
+    g.beginPath();
+    g.moveTo(x0, lt + lh - 2);
+    g.lineTo((x0 + x1) / 2, lt + 3);
+    g.lineTo(x1, lt + lh - 2);
+    g.closePath();
+    g.fill();
+    g.fillStyle = p.muted;
+    g.font = '600 11px "Atkinson Hyperlegible Next", system-ui, sans-serif';
+    g.textAlign = 'right';
+    g.textBaseline = 'middle';
+    g.fillText('güç', left - 6, lt + lh / 2);
   }
-  g.stroke();
-  g.fillStyle = p.muted;
-  g.font = '600 11px "Atkinson Hyperlegible Next", system-ui, sans-serif';
-  g.textAlign = 'right';
-  g.textBaseline = 'middle';
-  g.fillText('güç', left - 6, top + h / 2);
-}
-
-/** Scrolling trail for the mirror and sustain views. Samples use absolute seconds. */
-export function drawTrail(canvas, { samples, now, span = 8, center, range = 13, target = null, tol = 25 }) {
-  const { g, w, h } = fitCanvas(canvas);
-  const p = pal();
-  g.clearRect(0, 0, w, h);
-  const left = 48;
-  const right = 14;
-  const min = center - range / 2;
-  const max = center + range / 2;
-  const y = makeY(min, max, 12, h - 12);
-  const x = (tt) => left + ((tt - (now - span)) / span) * (w - left - right);
-  drawGrid(g, { w, min, max, y, left, right, rootPc: target != null ? ((Math.round(target) % 12) + 12) % 12 : null });
-  if (target != null) {
-    const per = Math.abs(y(0) - y(1));
-    const band = Math.max(3, (tol / 100) * per);
-    g.fillStyle = alpha(p.hit, 0.16);
-    g.fillRect(left, y(target) - band, w - left - right, band * 2);
-  }
-  g.save();
-  g.beginPath();
-  g.rect(left, 0, w - left - right, h);
-  g.clip();
-  voicePath(g, samples.filter((s) => s.t >= now - span - 0.2), x, y);
-  g.restore();
 }
 
 /** Small static pitch sketch for recordings. */

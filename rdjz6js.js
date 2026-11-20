@@ -2,10 +2,12 @@ import { EXERCISES, byId, CATS, TECH_CATS } from './d8hbkej.js';
 import { planKeys, repSeconds, sustainNotes, buildGlide } from './f6c5xz4.js';
 
 const TEMPLATES = {
-  15: [['isinma', 180], ['mix', 420, 2], ['aralik', 120], ['serbest', 0], ['sogu', 120]],
-  30: [['isinma', 240], ['mix', 600, 3], ['messa', 180], ['aralik', 180], ['serbest', 0], ['sogu', 120]],
-  45: [['isinma', 300], ['mix', 720, 3, ['gecis']], ['gecis', 300], ['vfe', 300], ['messa', 180], ['aralik', 240], ['serbest', 0], ['sogu', 150]],
+  15: [['sovt', 300], ['mix', 330, 2], ['aralik', 90], ['serbest', 0], ['sogu', 100]],
+  30: [['sovt', 420], ['mix', 540, 3], ['sovt-tm', 180], ['messa', 120], ['aralik', 120], ['serbest', 0], ['sogu', 120]],
+  45: [['sovt', 480], ['mix', 600, 3, ['gecis']], ['gecis', 240], ['sovt-tm', 240], ['vfe', 300], ['messa', 120], ['aralik', 150], ['serbest', 0], ['sogu', 150]],
 };
+// Resistance order for the warm-up, after the review by Hijleh and Pinto (2021).
+const RES_ORDER = ['orta', 'yuksek', 'dusuk', 'aktarim'];
 
 const LIGHT_SKIP = new Set(['messa', 'vfe', 'gecis']);
 const STEP_OVERHEAD = 15;
@@ -13,6 +15,7 @@ const STEP_OVERHEAD = 15;
 export function historyIndex(results) {
   const idx = {};
   for (const r of results) {
+    if (!r.exId) continue;
     const h = idx[r.exId] || (idx[r.exId] = { count: 0, last: 0 });
     h.count++;
     h.last = Math.max(h.last, r.at || 0);
@@ -43,11 +46,11 @@ export function stepFor(ex, s, maxSec) {
   }
   if (ex.type === 'sustain') {
     const notes = sustainNotes(ex, s);
-    return { ...base, kind: 'sustain', notes, estSec: notes.length * 18 };
+    return { ...base, kind: 'sustain', notes, estSec: notes.length * 22 };
   }
   if (ex.type === 'interval') {
-    const trials = Math.max(6, Math.min(16, Math.floor((maxSec || 45) / 3.8)));
-    return { ...base, kind: 'interval', trials, estSec: trials * 3.8 };
+    const trials = Math.max(6, Math.min(14, Math.floor((maxSec || 60) / 5.3)));
+    return { ...base, kind: 'interval', trials, estSec: trials * 5.3 };
   }
   const minutes = maxSec ? Math.max(3, Math.round(maxSec / 60)) : ex.minutes;
   return { ...base, kind: 'free', minutes, estSec: minutes * 60 };
@@ -98,16 +101,27 @@ export function generatePlan({ minutes, settings, results, sessions, energy, rnd
 
   for (const [slot, sec, count, exclude] of tpl) {
     if (light && LIGHT_SKIP.has(slot)) continue;
-    if (slot === 'isinma') {
-      const siren = byId['pipet-siren'];
-      const st = stepFor(siren, s);
-      steps.push(st);
-      const pat = pick('isinma').find((e) => e.type === 'pattern');
-      steps.push(stepFor(pat, s, Math.max(60, sec - st.estSec)));
+    if (slot === 'sovt') {
+      // Glide first, then one pattern per resistance level: medium, high, low, then transfer.
+      const budget = light ? sec * 1.3 : sec;
+      const glide = pick('sovt').find((e) => e.type === 'glide');
+      const g = stepFor(glide, s);
+      steps.push(g);
+      let left = budget - g.estSec;
+      const groups = RES_ORDER.map((r) => pick('sovt').find((e) => e.type === 'pattern' && e.res === r)).filter(Boolean);
+      groups.forEach((ex, i) => {
+        if (left < 40) return;
+        const st = stepFor(ex, s, left / (groups.length - i));
+        steps.push(st);
+        left -= st.estSec;
+      });
     } else if (slot === 'sogu') {
-      const siren = stepFor(byId['sogu-siren'], s);
-      steps.push(siren);
-      steps.push(stepFor(byId['sogu-mirildan'], s, Math.max(45, sec - siren.estSec)));
+      const glide = leastRecent([byId['sogu-siren'], byId['sogu-su']], hist, rnd)[0];
+      const g = stepFor(glide, s);
+      steps.push(g);
+      steps.push(stepFor(byId['sogu-mirildan'], s, Math.max(45, sec - g.estSec)));
+    } else if (slot === 'messa') {
+      steps.push(stepFor(leastRecent([byId['messa-di-voce'], byId['pipet-messa']], hist, rnd)[0], s, sec));
     } else if (slot === 'mix') {
       const n = light ? 2 : count;
       const cats = TECH_CATS.filter((c) => !(exclude || []).includes(c))
@@ -131,9 +145,9 @@ export function generatePlan({ minutes, settings, results, sessions, energy, rnd
   const hole = steps.findIndex((st) => st.placeholder);
   if (hole >= 0) steps[hole] = stepFor(byId.repertuvar, s, freeMin * 60);
   const reason = energy === 'yorgun'
-    ? 'Sesin yorgun olduğu için hafif plan: zor bloklar çıkarıldı, üst sınır iki yarım ses düşürüldü.'
+    ? 'Sesin yorgun olduğu için hafif plan: zor bloklar çıkarıldı, yarı kapalı ses yolu çalışması uzatıldı, üst sınır iki yarım ses düşürüldü.'
     : heavy
-      ? 'Son 48 saatte yorgunluk notun yüksekti; ses yükü etkisi 1–3 gün sürebildiği için bugün hafif plan.'
+      ? 'Son 48 saatte yorgunluk notun yüksekti; ses yükünün etkisi 1–3 gün sürebildiği için bugün hafif plan ve daha uzun yarı kapalı ses yolu çalışması.'
       : null;
   return {
     minutes, light, reason, createdAt: Date.now(), steps,

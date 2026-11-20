@@ -4,17 +4,17 @@ import { configureMusic } from './ewdv3t5.js';
 import { applyTheme } from './w7vpbjf.js';
 import { renderToday } from './nx8kc5c.js';
 import { renderLibrary } from './5axywum.js';
-import { renderMirror } from './i832ug2.js';
+import { renderPiano } from './bdicq9j.js';
 import { renderRecordings } from './7uhqccq.js';
 import { renderSettings } from './4jze4k2.js';
-import { inIframe } from './qpy3wmh.js';
+import { inIframe, initAudio, loadPiano, ensureAudio } from './qpy3wmh.js';
 
 const SW_URL = './syj8mjz.js';
 
 const ROUTES = [
   { id: 'bugun', label: 'Bugün', icon: 'today', render: renderToday },
   { id: 'egzersiz', label: 'Egzersizler', icon: 'list', render: renderLibrary },
-  { id: 'ayna', label: 'Ayna', icon: 'mirror', render: renderMirror },
+  { id: 'piyano', label: 'Piyano', icon: 'keys', render: renderPiano },
   { id: 'kayit', label: 'Kayıtlar', icon: 'rec', render: renderRecordings },
   { id: 'ayar', label: 'Ayarlar', icon: 'settings', render: renderSettings },
 ];
@@ -56,6 +56,11 @@ async function boot() {
   window.addEventListener('hashchange', route);
   await route();
   registerSW();
+  // Fetch and decode the piano in the background; audio starts on the first tap.
+  initAudio();
+  loadPiano();
+  const unlock = () => { ensureAudio(); window.removeEventListener('pointerdown', unlock); };
+  window.addEventListener('pointerdown', unlock);
 }
 
 function registerSW() {

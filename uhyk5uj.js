@@ -1,13 +1,11 @@
-import { h, clear, icon, toast, fmtDuration } from './nyxk7bs.js';
-import { audio, ensureMic, onPitch, latencyComp, keepAwake, useSilentInput, inIframe } from './qpy3wmh.js';
+import { h, clear, icon, toast, fmtDuration, segmented } from './nyxk7bs.js';
+import { audio, ensureAudio, loadPiano, keepAwake } from './qpy3wmh.js';
 import { settings, db } from './f36qmgd.js';
-import { byId } from './d8hbkej.js';
-import {
-  buildRep, buildGlide, buildIntervalTrial, scoreRep, describeScore, longestPhonation, envelopeMatch,
-} from './f6c5xz4.js';
-import { noteName, centsOff } from './ewdv3t5.js';
-import { drawRep, drawTrail, readPalette } from './zvga6p5.js';
-import { readout, mirrorWidget, recordControl } from './94h25de.js';
+import { byId, RES } from './d8hbkej.js';
+import { buildRep, buildGlide, buildIntervalTrial } from './f6c5xz4.js';
+import { noteName } from './ewdv3t5.js';
+import { drawRep, readPalette } from './zvga6p5.js';
+import { pianoTools } from './ybmk6gs.js';
 
 /* ---------- overlay ---------- */
 
@@ -21,13 +19,11 @@ export function openOverlay(onClose) {
   ov.onClose = onClose;
   ov.el.hidden = false;
   document.body.classList.add('locked');
-  history.pushState({ overlay: true }, '');
+  try { history.pushState({ overlay: true }, ''); } catch { /* sandboxed */ }
   keepAwake(true);
   readPalette();
   return ov.el;
 }
-
-export function setOverlayClose(fn) { ov.onClose = fn; }
 
 export function requestClose() {
   if (history.state?.overlay) history.back();
@@ -52,13 +48,13 @@ document.addEventListener('visibilitychange', () => {
 
 /* ---------- shared pieces ---------- */
 
-function header({ title, onClose, onInfo }) {
+function header({ title, onInfo }) {
   const t = h('h2', { class: 'run-title' }, title);
   const key = h('span', { class: 'key' });
   const count = h('span', { class: 'count' });
   const vowel = h('span', { class: 'vowel' });
   const el = h('header', { class: 'run-head' },
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Kapat', onclick: onClose }, icon('close')),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Kapat', onclick: requestClose }, icon('close')),
     h('div', { class: 'run-titles' }, t, h('p', { class: 'run-sub' }, key, count, vowel)),
     onInfo ? h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Nasıl yapılır', onclick: onInfo }, icon('info')) : h('span'));
   return {
@@ -72,10 +68,19 @@ function header({ title, onClose, onInfo }) {
   };
 }
 
+export function exMeta(ex) {
+  return [
+    ex.res ? `Yarı kapalı ses yolu: ${RES[ex.res]}` : null,
+    ex.gear ? `Gereken: ${ex.gear}` : null,
+    ex.scale || null,
+  ].filter(Boolean);
+}
+
 function infoSheet(ex, extra) {
   const dlg = h('dialog', { class: 'dialog sheet' },
     h('h3', null, ex.title),
     ex.vowel ? h('p', { class: 'muted' }, `Ses: ${ex.vowel}`) : null,
+    exMeta(ex).map((m) => h('p', { class: 'muted' }, m)),
     h('p', null, ex.how),
     h('p', { class: 'focus-note' }, ex.focus),
     extra ? h('p', { class: 'muted small' }, extra) : null,
@@ -85,30 +90,21 @@ function infoSheet(ex, extra) {
   dlg.showModal();
 }
 
-export function micReason(err) {
-  if (inIframe) {
-    return 'Claude içinde açılan bu görünüm mikrofona erişemiyor. Perde takibi ve kayıt için uygulamayı kendi adresinden aç; burada piyano eşliğiyle ölçümsüz çalışabilirsin.';
-  }
-  if (err?.name === 'NotAllowedError') return 'Mikrofon izni verilmedi. Adres çubuğundaki izin simgesinden mikrofona izin ver.';
-  if (err?.name === 'NotFoundError') return 'Mikrofon bulunamadı. Mikrofonun takılı olduğundan emin ol ya da Ayarlar\'dan başka bir giriş seç.';
-  return 'Mikrofon açılamadı. Başka bir uygulama kullanıyor olabilir.';
+function nowDisplay() {
+  const big = h('div', { class: 'now-big' }, '—');
+  const sub = h('div', { class: 'now-sub' }, '');
+  const el = h('div', { class: 'now' }, big, sub);
+  return {
+    el,
+    set(text, subText = '', state = '') {
+      if (big.textContent !== text) big.textContent = text;
+      if (sub.textContent !== subText) sub.textContent = subText;
+      el.dataset.state = state;
+    },
+  };
 }
 
-function micError(root, err, retry) {
-  clear(root, h('div', { class: 'run-msg' },
-    h('h2', null, 'Mikrofon açılamadı'),
-    h('p', null, micReason(err)),
-    h('div', { class: 'row' },
-      inIframe ? null : h('button', { class: 'btn primary', onclick: retry }, 'Tekrar dene'),
-      h('button', { class: `btn ${inIframe ? 'primary' : ''}`, onclick: () => { useSilentInput(); retry(); } }, 'Mikrofonsuz devam et'),
-      h('button', { class: 'btn ghost', onclick: requestClose }, 'Kapat'))));
-}
-
-const inRange = (m) => (m != null && m > settings.lo - 14 && m < settings.hi + 14 ? m : null);
-
-function fmtSec(sec) {
-  return sec.toFixed(1).replace('.', ',');
-}
+const fmtSec = (sec) => sec.toFixed(1).replace('.', ',');
 
 function keyHandler(map) {
   const fn = (e) => {
@@ -120,6 +116,21 @@ function keyHandler(map) {
   return () => document.removeEventListener('keydown', fn);
 }
 
+function frameLoop(fn) {
+  let raf = 0;
+  const loop = () => { raf = requestAnimationFrame(loop); fn(audio.ctx.currentTime); };
+  raf = requestAnimationFrame(loop);
+  return () => cancelAnimationFrame(raf);
+}
+
+function schedule(r, t0) {
+  for (const ev of r.events) {
+    if (ev.kind === 'chord') audio.synth.chord(ev.midis, t0 + ev.t, ev.dur, ev.vel, ev.spread ?? 0.012);
+    else if (ev.kind === 'note') audio.synth.piano(ev.midi, t0 + ev.t, ev.dur, ev.vel);
+    else if (ev.kind === 'click') audio.synth.click(t0 + ev.t, ev.accent);
+  }
+}
+
 /* ---------- step runner entry ---------- */
 
 /**
@@ -128,22 +139,23 @@ function keyHandler(map) {
  */
 export function runStep(root, step, opts = {}) {
   let ctl = null;
+  let aborted = false;
   const promise = new Promise((resolve) => {
     const boot = async () => {
-      clear(root, h('div', { class: 'run-msg' }, h('p', { class: 'muted' }, 'Mikrofon açılıyor…')));
-      try {
-        await ensureMic();
-      } catch (err) {
-        micError(root, err, boot);
-        ctl = { abort: () => resolve({ completed: false, results: [] }) };
-        return;
+      ensureAudio();
+      if (!audio.synth.ready) {
+        const msg = h('p', { class: 'muted' }, 'Piyano yükleniyor…');
+        clear(root, h('div', { class: 'run-msg' }, msg));
+        const ok = await loadPiano((p) => { msg.textContent = `Piyano yükleniyor… %${Math.round(p * 100)}`; });
+        if (!ok) toast('Piyano sesleri yüklenemedi; yedek ses kullanılıyor.');
       }
+      if (aborted) { resolve({ completed: false, results: [] }); return; }
       const make = step.kind === 'sustain' ? sustainRunner : step.kind === 'free' ? freeRunner : timelineRunner;
       ctl = make(root, step, opts, resolve);
     };
     boot();
   });
-  return { promise, abort: () => ctl?.abort() };
+  return { promise, abort: () => { aborted = true; ctl?.abort(); } };
 }
 
 /* ---------- pattern / glide / interval ---------- */
@@ -156,36 +168,32 @@ function timelineRunner(root, step, opts, resolve) {
   let rep = null;
   let repStart = 0;
   let running = false;
-  let paused = false;
-  let samples = [];
-  let reveal = null;
-  let show = true;
-  let liveOverride = null;
   let done = false;
+  let guideOverride = null;
+  let doneReps = 0;
   const exCount = {};
-  const agg = {};
+  const repsByEx = {};
   const ivTrials = [];
-  const glideVals = [];
   const built = [];
 
   const head = header({
     title: firstEx.title,
-    onClose: requestClose,
     onInfo: () => infoSheet(rep?.ex || firstEx, step.interleaved
-      ? 'Bu blokta egzersizler birkaç tonda bir dönüşümlü gelir. Bu ilk anda daha zor hissettirir ama araştırmalarda kalıcı öğrenmeyi artırdığı görülüyor.'
-      : settings.feedback === 'azalan' ? 'Perde çizgisi ilk iki tekrardan sonra gizlenir; sonuç her tekrarın ardından altta görünür. Göz simgesiyle çizgiyi istediğin zaman açabilirsin.' : null),
+      ? 'Bu blokta egzersizler birkaç tonda bir dönüşümlü gelir. İlk anda zor hissettirir ama araştırmalarda kalıcı öğrenmeyi artırdığı görülüyor.'
+      : settings.guide === 'fade' ? 'Melodi her egzersizin ilk iki tonunda piyanoda çalar, sonra yalnızca akorlar kalır. Melodi düğmesiyle istediğin zaman açıp kapatabilirsin.' : null),
   });
+  const meta = h('p', { class: 'run-meta' });
   const focus = h('p', { class: 'run-focus' }, firstEx.focus);
-  const canvas = h('canvas', { class: 'roll', 'aria-label': 'Hedef notalar ve perde çizgisi' });
-  const ro = readout();
-  const lastText = h('span', { class: 'last-text' }, '');
-  const dots = h('span', { class: 'dots' });
-  const last = h('div', { class: 'last', 'aria-live': 'polite' }, lastText, dots);
-  const rec = recordControl({ title: () => (step.cat === 'mix' ? 'Teknik blok' : firstEx.title), exIds: step.exIds || [firstEx.id] });
+  const canvas = h('canvas', { class: 'roll', 'aria-label': 'Söylenecek notalar ve akorlar' });
+  const now = nowDisplay();
+  const markHit = h('button', { class: 'btn', type: 'button' }, 'Tuttu');
+  const markMiss = h('button', { class: 'btn ghost', type: 'button' }, 'Kaçtı');
+  const marks = h('div', { class: 'row marks', hidden: true }, markHit, markMiss);
+  const side = h('div', { class: 'run-side' }, marks);
 
   const playBtn = h('button', { class: 'ctl main', type: 'button', 'aria-label': 'Duraklat' }, icon('pause', 26));
   const tempoVal = h('span', { class: 'tempo-val' });
-  const eyeBtn = h('button', { class: 'ctl', type: 'button', 'aria-label': 'Perde çizgisini göster ya da gizle' }, icon('eye'));
+  const guideBtn = h('button', { class: 'btn guide', type: 'button', 'aria-pressed': 'false' }, 'Melodi');
   const progress = h('div', { class: 'run-progress' }, h('span'));
 
   const controls = h('footer', { class: 'run-ctrl' },
@@ -198,16 +206,15 @@ function timelineRunner(root, step, opts, resolve) {
       h('button', { class: 'ctl small', type: 'button', 'aria-label': 'Tempoyu düşür', onclick: () => setTempo(-0.05) }, icon('minus', 18)),
       tempoVal,
       h('button', { class: 'ctl small', type: 'button', 'aria-label': 'Tempoyu artır', onclick: () => setTempo(0.05) }, icon('plus', 18))) : null,
-    h('div', { class: 'ctl-group' }, step.kind !== 'interval' && !audio.silent ? eyeBtn : null, rec.el));
+    step.kind === 'queue' ? h('div', { class: 'ctl-group' }, guideBtn) : null);
 
-  clear(root, h('div', { class: 'run' }, head.el, progress, focus, h('div', { class: 'stage' }, canvas), h('div', { class: 'run-read' }, ro.el, last), controls));
-  if (audio.silent) { showLastSilent(); ro.el.hidden = true; }
+  clear(root, h('div', { class: 'run' }, head.el, progress, meta, focus, h('div', { class: 'stage' }, canvas), h('div', { class: 'run-read' }, now.el, side), controls));
 
   playBtn.addEventListener('click', () => toggle());
-  eyeBtn.addEventListener('click', () => {
-    liveOverride = !show;
-    show = liveOverride;
-    eyeBtn.replaceChildren(icon(show ? 'eye' : 'eyeOff'));
+  guideBtn.addEventListener('click', () => {
+    guideOverride = !(rep?.guide);
+    guideBtn.setAttribute('aria-pressed', String(guideOverride));
+    toast(guideOverride ? 'Melodi sonraki tondan itibaren çalacak.' : 'Melodi sonraki tondan itibaren susacak.');
   });
 
   const sCur = () => ({ ...settings, tempo });
@@ -217,121 +224,68 @@ function timelineRunner(root, step, opts, resolve) {
   }
   setTempo(0);
 
+  function guideFor(ex) {
+    if (guideOverride != null) return guideOverride;
+    if (settings.guide === 'always') return true;
+    if (settings.guide === 'never') return false;
+    return (exCount[ex.id] || 0) < 2;
+  }
+
   function getRep(k) {
     if (step.kind === 'queue') {
       const q = step.queue[k];
-      return buildRep(byId[q.exId], q.root, sCur());
+      const ex = byId[q.exId];
+      return buildRep(ex, q.root, sCur(), { guide: guideFor(ex) });
     }
     if (step.kind === 'glide') return buildGlide(firstEx, settings, k);
     if (!built[k]) built[k] = buildIntervalTrial(firstEx, settings);
     return built[k];
   }
 
-  function liveVisible(ex) {
-    if (rep.kind === 'interval') return false;
-    if (liveOverride != null) return liveOverride;
-    if (rep.kind === 'glide' || settings.feedback === 'surekli') return true;
-    if (settings.feedback === 'ozet') return false;
-    return (exCount[ex.id] || 0) < 2;
-  }
-
-  function schedule(r, t0) {
-    for (const ev of r.events) {
-      if (ev.kind === 'chord') audio.synth.chord(ev.midis, t0 + ev.t, ev.dur, ev.vel);
-      else if (ev.kind === 'note') audio.synth.piano(ev.midi, t0 + ev.t, ev.dur, ev.vel);
-      else if (ev.kind === 'click') audio.synth.click(t0 + ev.t, ev.accent);
-    }
-  }
-
   function startRep() {
-    reveal = null;
     rep = getRep(i);
-    samples = [];
     audio.synth.stopAll();
     repStart = audio.ctx.currentTime + 0.12;
     schedule(rep, repStart);
     running = true;
-    paused = false;
-    show = liveVisible(rep.ex);
-    eyeBtn.replaceChildren(icon(show ? 'eye' : 'eyeOff'));
     playBtn.replaceChildren(icon('pause', 26));
     playBtn.setAttribute('aria-label', 'Duraklat');
+    guideBtn.setAttribute('aria-pressed', String(!!rep.guide));
     const ex = rep.ex;
-    head.set({
-      title: ex.title,
-      key: rep.kind === 'interval' ? rep.label : rep.kind === 'glide' ? '' : rep.label,
-      count: `${i + 1}/${total}`,
-      vowel: ex.vowel,
-    });
+    head.set({ title: ex.title, key: rep.kind === 'glide' ? '' : rep.label, count: `${i + 1}/${total}`, vowel: ex.vowel });
+    meta.textContent = exMeta(ex).join('. ');
+    meta.hidden = !meta.textContent;
     focus.textContent = ex.focus;
     progress.firstChild.style.width = `${(i / total) * 100}%`;
-    if (rep.kind === 'interval') ro.hide('?');
-  }
-
-  function showLastSilent() {
-    lastText.textContent = 'Mikrofon kapalı: piyano eşlik ediyor, ölçüm yapılmıyor.';
-  }
-
-  function showLast(text, statuses = [], devs = []) {
-    if (audio.silent) return;
-    lastText.textContent = text;
-    clear(dots, statuses.map((st, k) => h('span', {
-      class: `dot ${st}`,
-      title: devs[k] == null ? 'veri yok' : `${devs[k] > 0 ? '+' : ''}${Math.round(devs[k])}¢`,
-    })));
+    marks.hidden = true;
   }
 
   function endRep() {
     running = false;
     const ex = rep.ex;
     exCount[ex.id] = (exCount[ex.id] || 0) + 1;
-    if (rep.kind === 'pattern') {
-      const sc = scoreRep(rep, samples, settings.tolerance);
-      const env = ex.dyn === 'mdv' ? envelopeMatch(samples, rep.targets[0].t0, rep.targets[0].t1) : null;
-      (agg[ex.id] ||= { reps: [] }).reps.push({
-        root: rep.root, hits: sc.hits, total: sc.total, voiced: sc.voiced, meanAbs: sc.meanAbs, meanSigned: sc.meanSigned, env,
-      });
-      let text = `${rep.label}: ${describeScore(sc)}`;
-      if (env != null) text += `, güç eğrisi %${Math.round(env * 100)}`;
-      showLast(text, sc.notes.map((n) => n.status), sc.notes.map((n) => n.dev));
-    } else if (rep.kind === 'interval') {
-      const sc = scoreRep(rep, samples, Math.max(settings.tolerance, 35));
-      const n = sc.notes[0];
-      ivTrials.push({ st: rep.interval.st, dir: rep.dir, dev: n.dev, status: n.status });
-      const target = noteName(rep.targets[0].midi);
-      const text = n.dev == null
-        ? `Hedef ${target}; ses algılanmadı`
-        : `Hedef ${target}; ${Math.abs(n.dev) < 1 ? 'tam' : `${n.dev > 0 ? '+' : '−'}${Math.abs(Math.round(n.dev))}¢`}`;
-      showLast(text, [n.status], [n.dev]);
-      reveal = { rep, samples, statuses: [n.status], until: audio.ctx.currentTime + 1.6 };
-    } else if (rep.kind === 'glide') {
-      const v = samples.filter((x) => x.midi != null).map((x) => x.midi).sort((a, b) => a - b);
-      if (v.length > 20) {
-        const lo = v[Math.floor(v.length * 0.03)];
-        const hi = v[Math.floor(v.length * 0.97)];
-        glideVals.push([lo, hi]);
-        showLast(`Ulaştığın aralık: ${noteName(lo)} – ${noteName(hi)}`);
-      } else {
-        showLast('Ses algılanmadı');
-      }
-    }
+    doneReps++;
+    if (rep.kind === 'pattern') (repsByEx[ex.id] ||= []).push(rep.root);
     i++;
-    if (i >= total) {
-      if (reveal) { reveal.final = true; return; }
-      finish(true);
-      return;
-    }
-    if (!paused && !reveal) startRep();
+    if (i >= total) { finish(true); return; }
+    startRep();
+  }
+
+  function setMark(k, mark) {
+    const trial = ivTrials[k];
+    if (trial) trial.mark = mark;
+    marks.hidden = true;
   }
 
   function toggle() {
+    if (done) return;
     if (running) {
       audio.synth.stopAll();
       running = false;
-      paused = true;
       playBtn.replaceChildren(icon('play', 26));
       playBtn.setAttribute('aria-label', 'Devam et');
-    } else if (!done) {
+      now.set('Durdu', 'Devam etmek için oynat düğmesine bas');
+    } else {
       startRep();
     }
   }
@@ -343,213 +297,165 @@ function timelineRunner(root, step, opts, resolve) {
     startRep();
   }
 
-  function frame(f) {
-    const midi = inRange(f.midi);
-    rec.push(f, midi);
-    const now = audio.ctx.currentTime;
-    if (running) {
-      const t = f.t - latencyComp() - repStart;
-      if (t > -0.3) samples.push({ t, midi, db: f.db });
-      const tt = now - repStart;
-      const current = rep.targets.find((tg) => tt >= tg.t0 && tt < tg.t1);
-      if (rep.kind !== 'interval') {
-        if (show) ro.set(midi, current ? current.midi : null);
-        else ro.hide('·');
+  function tick(nowT) {
+    if (!rep) return;
+    const t = running ? nowT - repStart : 0;
+    const ex = rep.ex;
+    let hide = false;
+    if (rep.kind === 'interval') {
+      hide = t < rep.answerAt;
+      if (running && !hide && marks.hidden && !ivTrials[i]) {
+        ivTrials[i] = { st: rep.interval.st, dir: rep.dir, mark: null };
+        const k = i;
+        markHit.onclick = () => setMark(k, 'hit');
+        markMiss.onclick = () => setMark(k, 'miss');
+        marks.hidden = false;
       }
-      drawRep(canvas, {
-        rep, samples, t: tt, showVoice: show, cur: midi, tol: settings.tolerance,
-        lane: rep.ex.dyn === 'mdv', hideTargets: rep.kind === 'interval',
-      });
-      if (tt >= rep.duration) endRep();
-    } else if (reveal) {
-      drawRep(canvas, { rep: reveal.rep, samples: reveal.samples, t: reveal.rep.duration, showVoice: true, cur: null, tol: settings.tolerance, statuses: reveal.statuses });
-      if (now >= reveal.until) {
-        const fin = reveal.final;
-        reveal = null;
-        if (fin) finish(true);
-        else if (!paused) startRep();
-      }
-    } else if (rep) {
-      ro.set(midi);
-      drawRep(canvas, { rep, samples, t: 0, showVoice: false, cur: null, tol: settings.tolerance, lane: rep.ex.dyn === 'mdv', hideTargets: rep.kind === 'interval' });
     }
+    drawRep(canvas, { rep, t, hideTargets: hide, lane: ex.dyn === 'mdv', marks: rep.kind === 'interval' && ivTrials[i]?.mark ? [ivTrials[i].mark] : null });
+    if (!running) return;
+    // What to sing now
+    if (rep.kind === 'interval') {
+      if (t < rep.singStart) now.set(noteName(rep.root), 'Dinle', 'listen');
+      else if (t < rep.singEnd) now.set('?', `${rep.interval.name} ${rep.dir > 0 ? 'yukarı' : 'aşağı'}: söyle`, 'sing');
+      else now.set(noteName(rep.targets[0].midi), 'Doğru ses buydu', 'answer');
+    } else if (rep.kind === 'glide') {
+      now.set(t < rep.singStart ? noteName(rep.root) : 'Kaydır', t < rep.singStart ? 'Başlangıç sesi' : ex.vowel, t < rep.singStart ? 'listen' : 'sing');
+    } else {
+      const cur = rep.targets.find((tg) => t >= tg.t0 && t < tg.t1);
+      const next = rep.targets.find((tg) => tg.t0 >= t);
+      if (rep.listen && t < rep.singStart - rep.beat) now.set(noteName(rep.targets[0].midi), 'Önce dinle', 'listen');
+      else if (t < rep.singStart) now.set(noteName(rep.targets[0].midi), `Hazırlan, ${Math.max(1, Math.ceil((rep.singStart - t) / rep.beat))}`, 'listen');
+      else if (cur) now.set(noteName(cur.midi), cur.syl || '', 'sing');
+      else if (next) now.set(noteName(next.midi), next.syl || '', 'sing');
+      else now.set('Nefes', '', 'rest');
+    }
+    if (t >= rep.duration) endRep();
   }
 
   async function saveResults() {
     const at = Date.now();
     const out = [];
-    for (const [exId, a] of Object.entries(agg)) {
-      const sung = a.reps.filter((r) => r.voiced > 0);
-      if (!sung.length) continue;
-      const tot = sung.reduce((x, r) => x + r.total, 0);
-      const hits = sung.reduce((x, r) => x + r.hits, 0);
-      const abs = sung.filter((r) => r.meanAbs != null);
+    for (const [exId, roots] of Object.entries(repsByEx)) {
+      out.push({ exId, at, sessionId: opts.sessionId || null, kind: 'pattern', keys: roots.length, roots });
+    }
+    if (step.kind === 'glide' && doneReps) out.push({ exId: firstEx.id, at, sessionId: opts.sessionId || null, kind: 'glide', reps: doneReps });
+    if (step.kind === 'interval' && ivTrials.length) {
+      const marked = ivTrials.filter((x) => x?.mark);
       out.push({
-        exId, at, sessionId: opts.sessionId || null, kind: 'pattern', reps: a.reps,
-        hitRate: tot ? hits / tot : null,
-        meanAbs: abs.length ? abs.reduce((x, r) => x + r.meanAbs, 0) / abs.length : null,
+        exId: firstEx.id, at, sessionId: opts.sessionId || null, kind: 'interval', trials: ivTrials.filter(Boolean),
+        hitRate: marked.length ? marked.filter((x) => x.mark === 'hit').length / marked.length : null,
       });
-    }
-    if (ivTrials.some((x) => x.dev != null)) {
-      const sung = ivTrials.filter((x) => x.dev != null);
-      out.push({ exId: firstEx.id, at, sessionId: opts.sessionId || null, kind: 'interval', trials: ivTrials, hitRate: sung.filter((x) => x.status === 'hit').length / sung.length });
-    }
-    if (glideVals.length) {
-      out.push({ exId: firstEx.id, at, sessionId: opts.sessionId || null, kind: 'glide', lo: Math.min(...glideVals.map((g) => g[0])), hi: Math.max(...glideVals.map((g) => g[1])) });
     }
     for (const r of out) { try { await db.add('results', r); } catch { /* storage full */ } }
     return out;
   }
 
-  const stopSub = onPitch(frame);
+  const stopLoop = frameLoop(tick);
   const stopKeys = keyHandler({ Space: toggle, ArrowLeft: () => go(-1), ArrowRight: () => go(1), KeyR: () => go(0) });
 
   async function finish(completed) {
     if (done) return;
     done = true;
     running = false;
-    stopSub();
+    stopLoop();
     stopKeys();
     audio.synth.stopAll();
-    await rec.stop();
     const results = await saveResults();
-    resolve({ completed, results });
+    resolve({ completed, results, exIds: step.exIds || [firstEx.id] });
   }
 
   startRep();
   return { abort: () => finish(false) };
 }
 
-/* ---------- sustained notes (VFE 1 and 4) ---------- */
+/* ---------- sustained notes with a stopwatch (VFE 1 and 4) ---------- */
 
 function sustainRunner(root, step, opts, resolve) {
   const ex = byId[step.exId];
   const notes = step.notes;
   let k = 0;
-  let phase = 'cue';
-  let phaseAt = 0;
-  let samples = [];
-  let runStart = null;
-  let lastGood = null;
-  let bestRun = 0;
+  let holdStart = null;
   let done = false;
   const out = [];
 
-  const head = header({ title: ex.title, onClose: requestClose, onInfo: () => infoSheet(ex) });
-  const focus = h('p', { class: 'run-focus' }, ex.focus);
-  const canvas = h('canvas', { class: 'roll' });
+  const head = header({ title: ex.title, onInfo: () => infoSheet(ex) });
   const timer = h('div', { class: 'timer' }, '0,0');
   const hint = h('p', { class: 'timer-hint' }, '');
-  const ro = readout();
-  const nextBtn = h('button', { class: 'btn primary', type: 'button', hidden: true, onclick: () => next() }, 'Hemen başla');
+  const mainBtn = h('button', { class: 'btn primary huge', type: 'button' }, 'Başla');
+  const giveBtn = h('button', { class: 'btn ghost', type: 'button', onclick: () => cue() }, 'Notayı yeniden ver');
+  const nextBtn = h('button', { class: 'btn', type: 'button', hidden: true, onclick: () => next() }, 'Sonraki nota');
   const list = h('div', { class: 'mpt-list' });
-  const rec = recordControl({ title: ex.title, exIds: [ex.id] });
 
   clear(root, h('div', { class: 'run' },
-    head.el, focus,
-    h('div', { class: 'stage' }, canvas),
-    h('div', { class: 'run-read sustain' }, h('div', { class: 'timer-box' }, timer, hint), ro.el),
-    list,
-    h('footer', { class: 'run-ctrl' },
-      h('div', { class: 'ctl-group' },
-        h('button', { class: 'ctl', type: 'button', 'aria-label': 'Bu notayı yeniden', onclick: () => attempt() }, icon('again')),
-        h('button', { class: 'btn ghost', type: 'button', onclick: () => endAttempt() }, 'Bitti')),
-      nextBtn, rec.el)));
+    head.el,
+    h('p', { class: 'run-focus' }, ex.focus),
+    h('div', { class: 'sustain-stage' }, timer, hint, mainBtn, h('div', { class: 'row center' }, giveBtn, nextBtn)),
+    list));
 
   function renderList() {
     clear(list, out.map((r) => h('span', { class: 'mpt' }, `${noteName(r.midi)} ${fmtSec(r.sec)} sn`)));
   }
 
-  function attempt() {
-    const target = notes[k];
+  function cue() {
     audio.synth.stopAll();
-    samples = [];
-    runStart = null;
-    lastGood = null;
-    bestRun = 0;
-    phase = 'cue';
-    phaseAt = audio.ctx.currentTime + 0.1;
-    audio.synth.piano(target, phaseAt, 1.3, 0.5);
-    head.set({ key: noteName(target), count: `${k + 1}/${notes.length}`, vowel: ex.vowel });
-    timer.textContent = '0,0';
-    hint.textContent = 'Dinle';
-    nextBtn.hidden = true;
+    audio.synth.piano(notes[k], audio.ctx.currentTime + 0.05, 1.4, 0.5);
   }
 
-  function endAttempt() {
-    if (phase !== 'hold') return;
-    const sec = audio.silent ? audio.ctx.currentTime - phaseAt : longestPhonation(samples, notes[k]);
-    if (!audio.silent && sec >= 0.5) out.push({ midi: notes[k], sec });
-    renderList();
-    timer.textContent = fmtSec(sec);
-    phase = 'rest';
-    phaseAt = audio.ctx.currentTime + 6;
-    nextBtn.hidden = k + 1 >= notes.length;
-    if (k + 1 >= notes.length) hint.textContent = 'Son nota bitti';
+  function enter() {
+    head.set({ key: noteName(notes[k]), count: `${k + 1}/${notes.length}`, vowel: ex.vowel });
+    holdStart = null;
+    timer.textContent = '0,0';
+    hint.textContent = 'Notayı dinle, nefes al, sesi başlatırken düğmeye bas.';
+    mainBtn.textContent = 'Başla';
+    mainBtn.hidden = false;
+    nextBtn.hidden = true;
+    cue();
   }
+
+  mainBtn.addEventListener('click', () => {
+    if (holdStart == null) {
+      holdStart = performance.now();
+      mainBtn.textContent = 'Bitti';
+      hint.textContent = 'Ses bittiğinde bas.';
+    } else {
+      const sec = (performance.now() - holdStart) / 1000;
+      holdStart = null;
+      out.push({ midi: notes[k], sec });
+      renderList();
+      timer.textContent = fmtSec(sec);
+      mainBtn.hidden = true;
+      hint.textContent = k + 1 < notes.length ? 'Dinlen, hazır olunca sonraki notaya geç.' : 'Son nota bitti.';
+      nextBtn.textContent = k + 1 < notes.length ? 'Sonraki nota' : 'Bitir';
+      nextBtn.hidden = false;
+    }
+  });
 
   function next() {
     k++;
     if (k >= notes.length) { finish(true); return; }
-    attempt();
+    enter();
   }
 
-  function frame(f) {
-    const midi = inRange(f.midi);
-    rec.push(f, midi);
-    const now = audio.ctx.currentTime;
-    const target = notes[k];
-    if (phase === 'cue' && now > phaseAt + 1.5) {
-      phase = 'hold';
-      phaseAt = now;
-      hint.textContent = audio.silent ? 'Tut; bitince “Bitti”ye bas' : 'Tut';
-    }
-    if (phase === 'hold') {
-      samples.push({ t: f.t, midi, db: f.db });
-      const good = midi != null && Math.abs(centsOff(midi, target)) <= 100;
-      if (good) {
-        if (runStart == null || f.t - lastGood > 0.25) runStart = f.t;
-        lastGood = f.t;
-        bestRun = Math.max(bestRun, lastGood - runStart);
-        timer.textContent = fmtSec(bestRun);
-      }
-      if (audio.silent) {
-        timer.textContent = fmtSec(now - phaseAt);
-        if (now - phaseAt > 60) endAttempt();
-      } else {
-        const silentFor = lastGood == null ? now - phaseAt : f.t - lastGood;
-        if ((lastGood != null && silentFor > 0.8) || (lastGood == null && silentFor > 12) || now - phaseAt > 90) endAttempt();
-      }
-    } else if (phase === 'rest') {
-      const left = Math.ceil(phaseAt - now);
-      if (k + 1 < notes.length) hint.textContent = `Nefeslen; sıradaki ${left} sn sonra`;
-      if (now >= phaseAt) {
-        if (k + 1 < notes.length) next();
-        else finish(true);
-      }
-    }
-    ro.set(phase === 'cue' ? null : midi, target);
-    drawTrail(canvas, { samples: phase === 'hold' || phase === 'rest' ? samples : [], now: f.t, span: 12, center: target, range: 8, target, tol: 100 });
-  }
-
-  const stopSub = onPitch(frame);
+  const stopLoop = frameLoop(() => {
+    if (holdStart != null) timer.textContent = fmtSec((performance.now() - holdStart) / 1000);
+  });
 
   async function finish(completed) {
     if (done) return;
     done = true;
-    stopSub();
+    stopLoop();
     audio.synth.stopAll();
-    await rec.stop();
     const results = [];
     if (out.length) {
       const r = { exId: ex.id, at: Date.now(), sessionId: opts.sessionId || null, kind: 'sustain', mpt: out, best: Math.max(...out.map((x) => x.sec)) };
       try { await db.add('results', r); } catch { /* ignore */ }
       results.push(r);
     }
-    resolve({ completed, results });
+    resolve({ completed, results, exIds: [ex.id] });
   }
 
-  attempt();
+  enter();
   return { abort: () => finish(false) };
 }
 
@@ -561,17 +467,16 @@ function freeRunner(root, step, opts, resolve) {
   const started = Date.now();
   let done = false;
   let warned = false;
-  const head = header({ title: ex.title, onClose: requestClose, onInfo: () => infoSheet(ex) });
+  const head = header({ title: ex.title, onInfo: () => infoSheet(ex) });
   const clock = h('div', { class: 'clock' }, '');
-  const note = h('textarea', { class: 'input', rows: 2, placeholder: 'Hangi eser, hangi pasaj? Ne fark ettin?' });
-  const rec = recordControl({ title: () => (note.value.trim().split('\n')[0] || 'Repertuvar').slice(0, 60), exIds: [ex.id] });
-  const mirror = mirrorWidget({ onFrame: (f, midi) => rec.push(f, midi) });
+  const note = h('textarea', { class: 'input', rows: 2, placeholder: 'Hangi eser, hangi pasaj? Ne fark ettin?', id: 'free-note' });
+  const tools = pianoTools({ compact: true });
 
   clear(root, h('div', { class: 'run' },
     head.el,
     h('p', { class: 'run-focus' }, ex.focus),
-    h('div', { class: 'free-body' }, mirror.el, h('label', { class: 'field' }, h('span', null, 'Not'), note)),
-    h('footer', { class: 'run-ctrl' }, clock, rec.el, h('button', { class: 'btn primary', type: 'button', onclick: () => finish(true) }, 'Bitir'))));
+    h('div', { class: 'free-body' }, tools.el, h('label', { class: 'field' }, h('span', null, 'Not'), note)),
+    h('footer', { class: 'run-ctrl' }, clock, h('button', { class: 'btn primary', type: 'button', onclick: () => finish(true) }, 'Bitir'))));
   head.set({ count: `${Math.round(limit / 60)} dk` });
 
   const tick = setInterval(() => {
@@ -583,41 +488,54 @@ function freeRunner(root, step, opts, resolve) {
     if (left < 0 && !warned) { warned = true; toast('Ayrılan süre doldu. İstersen devam et.'); }
   }, 500);
 
-  mirror.start().catch(() => {});
-
   async function finish(completed) {
     if (done) return;
     done = true;
     clearInterval(tick);
-    mirror.stop();
-    await rec.stop();
     const sec = (Date.now() - started) / 1000;
     const r = { exId: ex.id, at: Date.now(), sessionId: opts.sessionId || null, kind: 'free', sec, note: note.value.trim() };
     try { await db.add('results', r); } catch { /* ignore */ }
-    resolve({ completed, results: [r] });
+    resolve({ completed, results: [r], exIds: [ex.id] });
   }
 
   return { abort: () => finish(false) };
 }
 
-/* ---------- step summary ---------- */
+/* ---------- self-rating and summaries ---------- */
+
+/** Two quick 1–5 self-ratings after an exercise; saves and calls onDone. */
+export function ratingPanel({ exIds, sessionId = null, onDone }) {
+  let ease = null;
+  let tune = null;
+  const save = async () => {
+    if (ease != null || tune != null) {
+      try { await db.add('results', { kind: 'rating', exIds, sessionId, at: Date.now(), ease, tune }); } catch { /* ignore */ }
+    }
+    onDone?.();
+  };
+  return h('div', { class: 'rating' },
+    h('div', { class: 'field' }, h('span', null, 'Ne kadar rahattı?'),
+      segmented([1, 2, 3, 4, 5].map((v) => [v, String(v)]), null, (v) => { ease = v; }, 'Rahatlık'),
+      h('span', { class: 'scale-ends' }, h('span', null, 'zorlandım'), h('span', null, 'çok rahat'))),
+    h('div', { class: 'field' }, h('span', null, 'Kulağına göre entonasyon?'),
+      segmented([1, 2, 3, 4, 5].map((v) => [v, String(v)]), null, (v) => { tune = v; }, 'Entonasyon'),
+      h('span', { class: 'scale-ends' }, h('span', null, 'çoğu kaydı'), h('span', null, 'tam yerinde'))),
+    h('div', { class: 'row' }, h('button', { class: 'btn primary', type: 'button', onclick: save }, 'Kaydet ve devam'),
+      h('button', { class: 'btn ghost', type: 'button', onclick: () => onDone?.() }, 'Geç')));
+}
 
 export function summaryLines(results) {
   const lines = [];
   for (const r of results) {
     const ex = byId[r.exId];
     if (!ex) continue;
-    if (r.kind === 'pattern') {
-      lines.push([ex.title, r.hitRate == null ? 'ses algılanmadı' : `%${Math.round(r.hitRate * 100)} isabet, ort. ${Math.round(r.meanAbs)}¢ sapma`]);
-    } else if (r.kind === 'interval') {
-      lines.push([ex.title, `%${Math.round(r.hitRate * 100)} isabet (${r.trials.length} deneme)`]);
-    } else if (r.kind === 'sustain') {
-      lines.push([ex.title, r.mpt.map((m) => `${noteName(m.midi)} ${fmtSec(m.sec)} sn`).join(', ')]);
-    } else if (r.kind === 'glide') {
-      lines.push([ex.title, `${noteName(r.lo)} – ${noteName(r.hi)}`]);
-    } else if (r.kind === 'free') {
-      lines.push([ex.title, fmtDuration(r.sec)]);
-    }
+    if (r.kind === 'pattern') lines.push([ex.title, `${r.keys} ton`]);
+    else if (r.kind === 'interval') {
+      const marked = r.trials.filter((x) => x.mark);
+      lines.push([ex.title, marked.length ? `${marked.filter((x) => x.mark === 'hit').length}/${marked.length} tuttu (kendi işaretlemen)` : `${r.trials.length} deneme`]);
+    } else if (r.kind === 'sustain') lines.push([ex.title, r.mpt.map((m) => `${noteName(m.midi)} ${fmtSec(m.sec)} sn`).join(', ')]);
+    else if (r.kind === 'glide') lines.push([ex.title, `${r.reps} tekrar`]);
+    else if (r.kind === 'free') lines.push([ex.title, fmtDuration(r.sec)]);
   }
   return lines;
 }

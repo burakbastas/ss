@@ -1,5 +1,5 @@
-const VERSION = '2a2cfdca71';
-const FILES = ["./","./4iub5gi.js","./qpy3wmh.js","./zvga6p5.js","./f6c5xz4.js","./d8hbkej.js","./amcnm9m.js","./3phb5vf.woff2","./qwp26wa.woff2","./fd8rpnp.woff2","./5mgcha7.woff2","./5bvgpyd.woff2","./yg7tevr.woff2","./abnpbnd.png","./xppxxid.png","./25rkr96.png","./kjx6cc8.png","./8qn93pi.js","./sdn9sd8.webmanifest","./94h25de.js","./ewdv3t5.js","./u4rp9mt.js","./ydsa43m.js","./uhyk5uj.js","./rdjz6js.js","./f36qmgd.js","./g8mradk.css","./rne5xj8.js","./w7vpbjf.js","./nyxk7bs.js","./5axywum.js","./i832ug2.js","./7uhqccq.js","./4jze4k2.js","./nx8kc5c.js"];
+const VERSION = 'd9d4d84124';
+const FILES = ["./","./4iub5gi.js","./qpy3wmh.js","./zvga6p5.js","./f6c5xz4.js","./d8hbkej.js","./amcnm9m.js","./3phb5vf.woff2","./qwp26wa.woff2","./fd8rpnp.woff2","./5mgcha7.woff2","./5bvgpyd.woff2","./yg7tevr.woff2","./88d542p.js","./abnpbnd.png","./xppxxid.png","./25rkr96.png","./kjx6cc8.png","./8qn93pi.js","./sdn9sd8.webmanifest","./ewdv3t5.js","./ybmk6gs.js","./ydsa43m.js","./uhyk5uj.js","./7q63hc9.js","./rdjz6js.js","./f36qmgd.js","./g8mradk.css","./rne5xj8.js","./w7vpbjf.js","./nyxk7bs.js","./5axywum.js","./bdicq9j.js","./7uhqccq.js","./4jze4k2.js","./nx8kc5c.js"];
 const CACHE = `etut-${VERSION}`;
 
 self.addEventListener('install', (e) => {
@@ -26,6 +26,11 @@ self.addEventListener('fetch', (e) => {
       if (hit) return hit;
       return fetch(req).then((res) => {
         if (req.mode === 'navigate' && !res.ok) return caches.match('./');
+        // Piano samples are cached the first time they are used.
+        if (res.ok && res.type === 'basic') {
+          const copy = res.clone();
+          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+        }
         return res;
       }).catch(() => (req.mode === 'navigate' ? caches.match('./') : Response.error()));
     }),

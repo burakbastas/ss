@@ -1,6 +1,7 @@
-import { centsOff, median, VOICES, INTERVALS, noteName } from './ewdv3t5.js';
+import { VOICES, INTERVALS, noteName } from './ewdv3t5.js';
+import { harmonize, voice, chordName } from './88d542p.js';
 
-const beatsOf = (ex, i, n) => {
+export const beatsOf = (ex, i, n) => {
   if (Array.isArray(ex.beats)) return ex.beats[i];
   if (i === n - 1 && ex.lastBeats) return ex.lastBeats;
   return ex.beats || 1;
@@ -12,6 +13,8 @@ export function patternBeats(ex) {
   for (let i = 0; i < n; i++) b += beatsOf(ex, i, n);
   return b;
 }
+
+const isFemale = (s) => !(VOICES[s.voice] || VOICES.tenor).male;
 
 /** All roots for a pattern exercise inside the singer's range, in practice order. */
 export function keysFor(ex, s) {
@@ -34,8 +37,8 @@ export function keysFor(ex, s) {
 export function repSeconds(ex, s) {
   const beat = 60 / (ex.bpm * s.tempo);
   const pat = patternBeats(ex) * beat;
-  const once = (ex.accomp || s.accomp) === 'once';
-  return 2 * beat + pat + (once ? pat + beat : 0) + 0.5 * beat;
+  const once = s.accomp === 'once' && !ex.noListen;
+  return 2 * beat + pat + (once ? pat + beat : 0) + 0.75 * beat;
 }
 
 /** Thin the key list (keeping both ends) so the run fits into maxSec. */
@@ -59,43 +62,112 @@ export function planKeys(ex, s, maxSec) {
   return fitKeys(keys, per, maxSec);
 }
 
-export function triad(root) {
-  return [root - 12, root, root + 4, root + 7];
+/**
+ * Accompaniment for one pass of the pattern starting at t0 (seconds from rep start).
+ * Pushes piano events and chord labels.
+ */
+function accompany(ex, key, s, t0, beat, events, labels, melody) {
+  const mode = ex.mode || 'major';
+  const n = ex.notes.length;
+  const beatsArr = ex.notes.map((_, i) => beatsOf(ex, i, n));
+  const total = beatsArr.reduce((a, b) => a + b, 0);
+  const acc = ex.acc || 'pad';
+  const female = isFemale(s);
+
+  if (acc === 'dem') {
+    const dem = [key - 12, key - 5];
+    for (let b = 0; b < total - 1e-6; b += 4) {
+      const d = Math.min(4, total - b) * beat;
+      events.push({ kind: 'chord', midis: dem, t: t0 + b * beat, dur: d * 0.98, vel: 0.24, spread: 0 });
+    }
+    labels.push({ t: t0, text: `Dem ${noteName(key, false)}` });
+  } else {
+    const segs = ex.harm || harmonize(ex.notes, beatsArr, mode, ex.segBeats);
+    for (const sg of segs) {
+      const { bass, rh } = voice(key, mode, sg.sym, female);
+      const st = t0 + sg.beat * beat;
+      const len = sg.beats * beat;
+      labels.push({ t: st, text: chordName(key, mode, sg.sym) });
+      if (acc === 'pad') {
+        for (let b = 0; b < sg.beats - 1e-6; b += 4) {
+          const d = Math.min(4, sg.beats - b) * beat;
+          events.push({ kind: 'note', midi: bass, t: st + b * beat, dur: d * 0.98, vel: 0.3 });
+          events.push({ kind: 'chord', midis: rh, t: st + b * beat, dur: d * 0.98, vel: 0.2 });
+        }
+      } else if (acc === 'pulse') {
+        events.push({ kind: 'note', midi: bass, t: st, dur: Math.min(len, beat) * 0.9, vel: 0.3 });
+        for (let b = 0; b < sg.beats - 1e-6; b += 1) {
+          events.push({ kind: 'chord', midis: rh, t: st + b * beat, dur: beat * 0.42, vel: b === 0 ? 0.22 : 0.17, spread: 0.004 });
+        }
+      } else if (acc === 'broken') {
+        events.push({ kind: 'note', midi: bass, t: st, dur: len * 0.98, vel: 0.3 });
+        const order = rh.length >= 3 ? [0, 2, 1, 2] : [0, 1];
+        let k = 0;
+        for (let b = 0; b < sg.beats - 1e-6; b += 0.5) {
+          events.push({ kind: 'note', midi: rh[order[k % order.length]], t: st + b * beat, dur: beat * 0.55, vel: 0.17 });
+          k++;
+        }
+      }
+    }
+  }
+  if (melody) {
+    let t = t0;
+    ex.notes.forEach((off, i) => {
+      const d = beatsArr[i] * beat;
+      const sound = ex.staccato ? d * 0.45 : d;
+      events.push({ kind: 'note', midi: key + off, t, dur: sound * 0.95, vel: 0.36 });
+      t += d;
+    });
+  }
+  return total * beat;
 }
 
 /**
- * Timeline for one repetition: what the piano plays (events) and what the singer
- * should sing (targets), in seconds from the rep start.
+ * Timeline for one repetition: piano events, chord labels and the notes to sing,
+ * in seconds from the rep start.
  */
-export function buildRep(ex, root, s) {
+export function buildRep(ex, root, s, { guide = false } = {}) {
   const beat = 60 / (ex.bpm * s.tempo);
-  const mode = ex.accomp || s.accomp;
-  const events = [{ kind: 'chord', midis: triad(root), t: 0, dur: beat * 1.1, vel: 0.3 }];
-  const n = ex.notes.length;
+  const mode = ex.mode || 'major';
+  const female = isFemale(s);
+  const events = [];
+  const labels = [];
+  // Intro: tonic (or dem) with the first sung note on top, then a breath.
+  const first = root + ex.notes[0];
+  if (ex.acc === 'dem') {
+    events.push({ kind: 'chord', midis: [root - 12, root - 5], t: 0, dur: beat * 1.6, vel: 0.26, spread: 0 });
+  } else {
+    const { bass, rh } = voice(root, mode, mode === 'minor' ? 'i' : 'I', female);
+    events.push({ kind: 'note', midi: bass, t: 0, dur: beat * 1.2, vel: 0.3 });
+    events.push({ kind: 'chord', midis: rh, t: 0, dur: beat * 1.2, vel: 0.22 });
+  }
+  events.push({ kind: 'note', midi: first, t: 0.02, dur: beat * 1.2, vel: 0.42 });
+
   let t = 2 * beat;
-  if (mode === 'once') {
-    for (let i = 0; i < n; i++) {
-      const d = beatsOf(ex, i, n) * beat;
-      const sound = ex.staccato ? d * 0.45 : d * 0.95;
-      events.push({ kind: 'note', midi: root + ex.notes[i], t, dur: sound, vel: 0.5 });
-      t += d;
-    }
+  const listen = s.accomp === 'once' && !ex.noListen;
+  if (listen) {
+    t += accompany(ex, root, s, t, beat, events, [], true);
     t += beat;
   }
   const singStart = t;
+  const singLen = accompany(ex, root, s, singStart, beat, events, labels, guide && !listen);
   const targets = [];
+  const n = ex.notes.length;
+  let tt = singStart;
   for (let i = 0; i < n; i++) {
     const d = beatsOf(ex, i, n) * beat;
     const sound = ex.staccato ? d * 0.45 : d;
-    const midi = root + ex.notes[i];
-    targets.push({ midi, t0: t, t1: t + sound, syl: ex.syl ? ex.syl[i] : null });
-    if (mode === 'birlikte') events.push({ kind: 'note', midi, t, dur: sound * 0.95, vel: 0.28 });
-    t += d;
+    targets.push({ midi: root + ex.notes[i], t0: tt, t1: tt + sound, syl: ex.syl ? ex.syl[i] : null });
+    tt += d;
   }
   if (ex.clicks) {
-    for (let c = singStart; c < t - 1e-6; c += beat) events.push({ kind: 'click', t: c, accent: c === singStart });
+    for (let c = singStart; c < singStart + singLen - 1e-6; c += beat) events.push({ kind: 'click', t: c, accent: c === singStart });
   }
-  return { kind: 'pattern', ex, root, label: noteName(root), events, targets, singStart, singEnd: t, beat, duration: t + 0.5 * beat };
+  const singEnd = singStart + singLen;
+  return {
+    kind: 'pattern', ex, root, label: noteName(root), events, labels, targets, listen,
+    singStart, singEnd, beat, duration: singEnd + 0.75 * beat, guide: guide && !listen,
+  };
 }
 
 export function resolveGlideNote([base, off], s) {
@@ -106,25 +178,28 @@ export function buildGlide(ex, s, repIndex = 0) {
   const g = ex.glide;
   const a = resolveGlideNote(g.from, s);
   const b = resolveGlideNote(g.to, s);
-  const lead = 1.2;
+  const lead = 1.5;
   const path = [{ t: lead, midi: a }, { t: lead + g.sec, midi: b }];
   if (g.shape === 'updown') path.push({ t: lead + 2 * g.sec, midi: a });
   const end = path[path.length - 1].t;
   return {
     kind: 'glide', ex, root: a, label: `${repIndex + 1}/${g.reps}`,
-    events: [{ kind: 'note', midi: a, t: 0, dur: 0.9, vel: 0.45 }],
-    targets: [], path, singStart: lead, singEnd: end, duration: end + 1.0,
+    events: [
+      { kind: 'note', midi: a, t: 0, dur: 0.7, vel: 0.45 },
+      { kind: 'note', midi: b, t: 0.55, dur: 0.6, vel: 0.32 },
+    ],
+    labels: [], targets: [], path, singStart: lead, singEnd: end, duration: end + 1.0,
   };
 }
 
 export function sustainNotes(ex, s) {
-  const male = (VOICES[s.voice] || VOICES.tenor).male;
-  const notes = male ? ex.male : ex.female;
+  const notes = isFemale(s) ? ex.female : ex.male;
   const out = [];
   for (const m of notes) for (let r = 0; r < (ex.reps || 1); r++) out.push(m);
   return out;
 }
 
+/** Interval trial: base note, a window to sing, then the piano plays the answer. */
 export function buildIntervalTrial(ex, s, rnd = Math.random) {
   const choices = INTERVALS.filter((iv) => ex.intervals.includes(iv.st));
   for (let tries = 0; tries < 50; tries++) {
@@ -134,83 +209,21 @@ export function buildIntervalTrial(ex, s, rnd = Math.random) {
     const base = s.lo + 1 + Math.floor(rnd() * Math.max(1, span));
     const target = base + dir * iv.st;
     if (target < s.lo || target > s.hi - 1) continue;
+    const singStart = 1.4;
+    const singEnd = 3.9;
     return {
       kind: 'interval', ex, root: base, label: `${noteName(base)} → ${iv.name} ${dir > 0 ? 'yukarı' : 'aşağı'}`,
       interval: iv, dir,
-      events: [{ kind: 'note', midi: base, t: 0, dur: 1.0, vel: 0.5 }],
+      events: [
+        { kind: 'note', midi: base, t: 0, dur: 1.0, vel: 0.5 },
+        { kind: 'note', midi: target, t: singEnd + 0.1, dur: 1.1, vel: 0.5 },
+      ],
+      labels: [],
       ref: { midi: base, t0: 0, t1: 1.0 },
-      targets: [{ midi: target, t0: 1.4, t1: 3.2 }],
-      singStart: 1.4, singEnd: 3.2, duration: 3.6,
+      targets: [{ midi: target, t0: singStart, t1: singEnd }],
+      answerAt: singEnd + 0.1,
+      singStart, singEnd, duration: singEnd + 2.4,
     };
   }
   return null;
-}
-
-/** Score sung pitch samples against a rep's targets. Samples: {t, midi|null}. */
-export function scoreRep(rep, samples, tol) {
-  const notes = rep.targets.map((tg) => {
-    const d = tg.t1 - tg.t0;
-    const lead = rep.kind === 'interval' ? 0.35 : Math.min(0.15, d * 0.3);
-    const a = tg.t0 + lead;
-    const b = tg.t1 - Math.min(0.05, d * 0.1);
-    let total = 0;
-    const vals = [];
-    for (const sm of samples) {
-      if (sm.t < a || sm.t > b) continue;
-      total++;
-      if (sm.midi != null) vals.push(centsOff(sm.midi, tg.midi));
-    }
-    if (!total || vals.length / total < 0.4 || vals.length < 2) return { midi: tg.midi, status: 'nodata', dev: null };
-    const dev = median(vals);
-    const ad = Math.abs(dev);
-    const status = ad <= tol ? 'hit' : ad <= tol * 2 ? 'near' : 'miss';
-    return { midi: tg.midi, status, dev };
-  });
-  const withData = notes.filter((n) => n.dev != null);
-  const hits = notes.filter((n) => n.status === 'hit').length;
-  const meanAbs = withData.length ? withData.reduce((a, n) => a + Math.abs(n.dev), 0) / withData.length : null;
-  const meanSigned = withData.length ? withData.reduce((a, n) => a + n.dev, 0) / withData.length : null;
-  return { notes, hits, total: notes.length, voiced: withData.length, meanAbs, meanSigned };
-}
-
-export function describeScore(sc) {
-  if (!sc || !sc.voiced) return 'Ses algılanmadı';
-  const parts = [`${sc.hits}/${sc.total} isabet`, `ort. ${Math.round(sc.meanAbs)}¢`];
-  if (sc.meanSigned > 12) parts.push('genelde tiz');
-  else if (sc.meanSigned < -12) parts.push('genelde pes');
-  return parts.join(', ');
-}
-
-/** Longest stretch of voiced frames near the target, tolerating short dropouts. */
-export function longestPhonation(samples, target, maxGap = 0.25, window = 100) {
-  let best = 0;
-  let start = null;
-  let lastGood = null;
-  for (const sm of samples) {
-    const good = sm.midi != null && Math.abs(centsOff(sm.midi, target)) <= window;
-    if (good) {
-      if (start == null || sm.t - lastGood > maxGap) start = sm.t;
-      lastGood = sm.t;
-      best = Math.max(best, lastGood - start);
-    }
-  }
-  return best;
-}
-
-/** Messa di voce: compare loudness shape with a rise-and-fall envelope (0..1, higher is closer). */
-export function envelopeMatch(samples, t0, t1) {
-  const pts = samples.filter((s) => s.t >= t0 && s.t <= t1 && s.midi != null);
-  if (pts.length < 10) return null;
-  const dbs = pts.map((p) => p.db);
-  const lo = Math.min(...dbs);
-  const hi = Math.max(...dbs);
-  if (hi - lo < 3) return 0;
-  let err = 0;
-  for (const p of pts) {
-    const x = (p.t - t0) / (t1 - t0);
-    const want = 1 - Math.abs(2 * x - 1);
-    const got = (p.db - lo) / (hi - lo);
-    err += Math.abs(want - got);
-  }
-  return Math.max(0, 1 - err / pts.length / 0.5);
 }
