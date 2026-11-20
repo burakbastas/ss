@@ -350,6 +350,7 @@ canvas.roll { position: absolute; inset: 8px 8px 0; width: calc(100% - 16px); he
 
 /* Piano-led runner */
 .run-meta { padding: 6px 16px 0; color: var(--muted); font-size: var(--fs-0); max-width: 70ch; }
+.run-meta.fixed { height: calc(4.5em + 6px); overflow: hidden; }
 .now { --big: clamp(3rem, 13vw, 5.75rem); display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
 /* Fixed line boxes: the readout must not change height as names change, or the roll above resizes. */
 .now-big {
@@ -364,6 +365,7 @@ canvas.roll { position: absolute; inset: 8px 8px 0; width: calc(100% - 16px); he
 .now-sub { color: var(--muted); font-weight: 600; height: 1.5em; line-height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run-side { display: grid; gap: 8px; justify-items: end; }
 .btn.guide[aria-pressed="true"] { border-color: var(--voice); color: var(--ink); box-shadow: inset 0 0 0 1px var(--voice); }
+.btn.toggle[aria-pressed="true"] { border-color: var(--voice); color: var(--ink); box-shadow: inset 0 0 0 1px var(--voice); }
 .sustain-stage { flex: 1 1 auto; display: grid; place-content: center; justify-items: center; gap: 18px; padding: 24px 16px; text-align: center; }
 .sustain-stage .timer { font-size: clamp(4rem, 20vw, 8rem); }
 .btn.huge { min-height: 76px; min-width: 220px; font-size: 1.3rem; border-radius: 20px; }

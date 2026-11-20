@@ -1,6 +1,6 @@
 import { EXERCISES, byId, CATS, TECH_CATS, resolveEx } from './d8hbkej.js';
 import { planKeys, repSeconds, sustainNotes, glideSeconds, SUSTAIN_SEC, INTERVAL_SEC } from './f6c5xz4.js';
-import { SET_VARIANTS, POOL, scaleFor } from './392vqcv.js';
+import { SET_VARIANTS, POOL, scaleFor, mixFor, mixNames } from './392vqcv.js';
 import { dayKey } from './nyxk7bs.js';
 
 // [slot, seconds, count, excluded cats]. 'tm' is the Turkish-music block: a straw, water
@@ -114,6 +114,39 @@ export function stepFor(ex, s, maxSec, variant = null) {
 }
 
 /**
+ * Mixed Turkish-music run: the keys sweep the range as usual while the çeşni or makam
+ * changes every `chunk` keys, starting with vid. Keys fit every variant in the mix.
+ */
+export function stepForMix(ex, s, maxSec, vid, allowed = null) {
+  const mix = ex.tm ? mixFor(ex.tm.set, vid, allowed) : null;
+  if (!mix || ex.type !== 'pattern') return stepFor(ex, s, maxSec, vid);
+  const rexs = Object.fromEntries(mix.variants.map((v) => [v, resolveEx(ex, v)]));
+  const all = Object.values(rexs);
+  const lo = Math.min(...all.map((r) => Math.min(...r.notes)));
+  const hi = Math.max(...all.map((r) => Math.max(...r.notes)));
+  const per = all.reduce((a, r) => a + repSeconds(r, s), 0) / all.length;
+  const keys = planKeys({ ...all[0], notes: [lo, hi] }, s, maxSec, per);
+  const queue = keys.map((root, i) => ({ exId: ex.id, root, tm: mix.variants[Math.floor(i / mix.chunk) % mix.variants.length] }));
+  return {
+    exId: ex.id, cat: ex.cat, tm: vid, kind: 'queue', queue,
+    title: `${all[0].title}: ${mix.label}, karışık`,
+    mixed: { label: mix.label, names: mixNames(ex.tm.set, mix), chunk: mix.chunk, variants: mix.variants },
+    estSec: queue.reduce((a, q) => a + repSeconds(rexs[q.tm], s), 0),
+  };
+}
+
+/** How many times each çeşni and makam has been practised. */
+export function variantCounts(results) {
+  const out = { cesni: {}, makam: {} };
+  for (const r of results) {
+    if (!r.tm || !POOL[r.set]) continue;
+    const pool = out[POOL[r.set]];
+    pool[r.tm] = (pool[r.tm] || 0) + 1;
+  }
+  return out;
+}
+
+/**
  * Interleaved technique block. Exercises practiced fewer than 3 times run first as a
  * block (acquisition), the rest alternate every few keys (contextual interference).
  */
@@ -150,6 +183,9 @@ export function needsLightDay(sessions, now = Date.now()) {
 export function generatePlan({ minutes, settings, results, sessions, energy, rnd = Math.random, now = Date.now() }) {
   const hist = historyIndex(results);
   const ofDay = variantsOfDay(results, now);
+  // Variants met at least twice count as known; new ones are practised blocked first.
+  const counts = variantCounts(results);
+  const known = (pool) => Object.keys(counts[pool]).filter((v) => counts[pool][v] >= 2);
   // Alternate which tradition opens the warm-up, day by day.
   const tmFirst = Math.floor(now / 864e5) % 2 === 0;
   const heavy = needsLightDay(sessions, now);
@@ -185,7 +221,14 @@ export function generatePlan({ minutes, settings, results, sessions, energy, rnd
           ? EXERCISES.filter((e) => ['tm-cesni', 'tm-dizi'].includes(e.cat) && e.res)
           : EXERCISES.filter((e) => e.cat === part && (part === 'tm-sus' || !e.res));
         const ex = leastRecent(pool, hist, rnd)[0];
-        steps.push(stepFor(ex, s, (sec * (light ? 1.15 : 1) * TM_SHARE[part]) / shareSum, variantFor(ex, ofDay)));
+        const budget = (sec * (light ? 1.15 : 1) * TM_SHARE[part]) / shareSum;
+        const v = variantFor(ex, ofDay);
+        const p = ex.tm && POOL[ex.tm.set];
+        // Çeşni and makam steps interleave once today's variant and at least two of its
+        // neighbours are known; until then the day's variant is practised on its own.
+        const mixable = !light && ['tm-cesni', 'tm-dizi'].includes(part) && p && (counts[p][v] || 0) >= 2;
+        const mixStep = mixable ? stepForMix(ex, s, budget, v, known(p)) : null;
+        steps.push(mixStep?.mixed && mixStep.mixed.variants.length >= 3 ? mixStep : stepFor(ex, s, budget, v));
       }
     } else if (slot === 'sogu') {
       const glide = leastRecent([byId['sogu-siren'], byId['sogu-su']], hist, rnd)[0];

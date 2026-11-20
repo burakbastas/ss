@@ -70,7 +70,8 @@ export function runSession(session, { onChange } = {}) {
     const st = steps[session.idx];
     const exs = st.cat === 'mix' ? st.exIds.map((id) => byId[id]) : [resolveEx(byId[st.exId], st.tm)];
     const blocked = st.blockedIds?.length ? h('p', { class: 'muted small' }, 'Yeni egzersizler önce tek başına çalışılır; üç seanstan sonra karışık sıraya girer.') : null;
-    const mixNote = st.interleaved ? h('p', { class: 'muted small' }, 'Bu blokta egzersizler birkaç tonda bir dönüşümlü gelir. İlk anda zor hissettirir ama öğrenilenin kalıcılığını artırır.') : null;
+    const mixNote = st.interleaved ? h('p', { class: 'muted small' }, 'Bu blokta egzersizler birkaç tonda bir dönüşümlü gelir. İlk anda zor hissettirir ama öğrenilenin kalıcılığını artırır.')
+      : st.mixed ? h('p', { class: 'muted small' }, `Karışık, ${st.mixed.label}: ${st.mixed.names}. ${st.mixed.chunk} tonda bir sıradakine geçilir; benzer perdeleri art arda söylemek koma farklarını ayırt etmeyi güçlendirir.`) : null;
     clear(root, h('div', { class: 'run inter' },
       h('header', { class: 'run-head' },
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': 'Seansı kapat', onclick: requestClose }, icon('close')),

@@ -56,9 +56,8 @@ export function fitKeys(keys, perRep, maxSec) {
   return out;
 }
 
-export function planKeys(ex, s, maxSec) {
+export function planKeys(ex, s, maxSec, per = repSeconds(ex, s)) {
   let keys = keysFor(ex, s);
-  const per = repSeconds(ex, s);
   if (!maxSec || keys.length * per <= maxSec) return keys;
   if (ex.dir === 'updown') {
     keys = keysFor({ ...ex, dir: 'up' }, s);

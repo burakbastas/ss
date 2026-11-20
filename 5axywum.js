@@ -1,6 +1,6 @@
 import { h, clear, segmented, fmtEst, fmtDuration } from './nyxk7bs.js';
 import { EXERCISES, CATS, TRADS, inTrad, tmOnly, resolveEx } from './d8hbkej.js';
-import { stepFor, historyIndex, variantsOfDay, variantFor, ofDayText } from './rdjz6js.js';
+import { stepFor, stepForMix, historyIndex, variantsOfDay, variantFor, ofDayText } from './rdjz6js.js';
 import { runSingle } from './amcnm9m.js';
 import { exMeta, metaText } from './uhyk5uj.js';
 import { settings, saveSettings, db } from './f36qmgd.js';
@@ -20,14 +20,22 @@ export async function renderLibrary(main) {
   const row = (ex) => {
     const isTm = trad === 'tm' && !!ex.tm;
     let variant = isTm ? variantFor(ex, ofDay) : null;
+    let mixed = false;
+    const canMix = isTm && ex.type === 'pattern' && SET_VARIANTS[ex.tm.set].length > 1;
+    const build = () => (mixed ? stepForMix(ex, settings, null, variant) : stepFor(ex, settings, null, variant));
     const title = h('h3');
+    const mixNote = h('p', { class: 'muted', hidden: true });
     const info = h('p', { class: 'muted' });
     const meta = h('p', { class: 'muted' });
     const n = hist[ex.id]?.count || 0;
     const last = hist[ex.id]?.lastSec;
     const update = () => {
       const rex = resolveEx(ex, variant);
-      const st = stepFor(ex, settings, null, variant);
+      const st = build();
+      mixNote.hidden = !st.mixed;
+      mixNote.textContent = st.mixed
+        ? `Karışık, ${st.mixed.label}: ${st.mixed.names}. ${st.mixed.chunk} tonda bir sıradakine geçer.`
+        : '';
       title.textContent = rex.title;
       const roots = st.queue ? [...new Set(st.queue.map((q) => q.root))] : null;
       const span = roots?.length
@@ -51,13 +59,19 @@ export async function renderLibrary(main) {
         SET_VARIANTS[set].map((v) => h('option', { value: v, selected: v === variant }, variantLabel(set, v))));
       picker.addEventListener('change', () => { variant = picker.value; update(); });
     }
+    const mixBtn = canMix ? h('button', {
+      class: 'btn ghost toggle', type: 'button', 'aria-pressed': 'false',
+      title: 'Seçili çeşni ya da makamdan başlayıp benzerleriyle dönüşümlü çalış',
+      onclick: (e) => { mixed = !mixed; e.currentTarget.setAttribute('aria-pressed', String(mixed)); update(); },
+    }, 'Karışık') : null;
     return h('li', null,
-      h('div', { class: 'lib-text' }, title, info, meta, h('p', { class: 'lib-how' }, ex.how)),
+      h('div', { class: 'lib-text' }, title, info, mixNote, meta, h('p', { class: 'lib-how' }, ex.how)),
       h('div', { class: 'lib-act' },
         picker,
+        mixBtn,
         h('button', {
           class: 'btn', type: 'button', 'aria-label': `${ex.title} başlat`,
-          onclick: () => { ensureAudio(); runSingle(stepFor(ex, settings, null, variant), { onFinish: () => renderLibrary(main) }); },
+          onclick: () => { ensureAudio(); runSingle(build(), { onFinish: () => renderLibrary(main) }); },
         }, 'Başla')));
   };
 

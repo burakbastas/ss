@@ -104,6 +104,46 @@ export const DIZI = [
 ];
 const dizi = Object.fromEntries(DIZI.map((d) => [d.id, d]));
 
+/*
+ * Mixed practice: interleaving confusable categories sharpens discrimination
+ * (Kornell & Bjork 2008; Carvalho & Goldstone 2014), so a mixed run moves through the
+ * makamlar closest to the chosen one, where the same perde is pressed a few commas
+ * apart. Each makam has one home family.
+ */
+export const FAMILIES = {
+  ussak: { name: 'Dügah’ta Uşşak ailesi', ids: ['ussak', 'neva', 'huseyni', 'karcigar', 'saba'] },
+  hicaz: { name: 'Hicaz ailesi', ids: ['hicaz', 'humayun', 'uzzal', 'zirguleli-hicaz'] },
+  ikinci: { name: 'Dügah’ta ikinci derece', ids: ['kurdi', 'hicaz', 'ussak', 'buselik'] },
+  rast: { name: 'Rast kararlı makamlar', ids: ['rast', 'suzinak', 'mahur', 'nihavent', 'kurdilihicazkar'] },
+  cargah: { name: 'Çargah dizisi ve şedleri', ids: ['cargah', 'mahur', 'acemasiran'] },
+};
+const HOME = {
+  ussak: 'ussak', neva: 'ussak', huseyni: 'ussak', karcigar: 'ussak', saba: 'ussak',
+  hicaz: 'hicaz', humayun: 'hicaz', uzzal: 'hicaz', 'zirguleli-hicaz': 'hicaz',
+  kurdi: 'ikinci', buselik: 'ikinci',
+  rast: 'rast', suzinak: 'rast', nihavent: 'rast', kurdilihicazkar: 'rast',
+  mahur: 'cargah', cargah: 'cargah', acemasiran: 'cargah',
+};
+// Çeşniler on the same karar first, ordered by their second degree (4, 5, 8, 9 commas).
+const CESNI_MIX = ['kurdi', 'hicaz', 'ussak', 'buselik', 'rast', 'cargah'];
+
+/**
+ * The rotation for a mixed run starting from vid: its family (makam) or all çeşniler,
+ * optionally limited to `allowed`. chunk = keys per variant before moving on.
+ */
+export function mixFor(set, vid, allowed = null) {
+  if (!SET_VARIANTS[set] || SET_VARIANTS[set].length < 2) return null;
+  const ok = (id) => id === vid || !allowed || allowed.includes(id);
+  if (set === 'dizi') {
+    const fam = FAMILIES[HOME[vid]] || FAMILIES.ussak;
+    const variants = [vid, ...fam.ids.filter((id) => id !== vid && ok(id))];
+    return variants.length > 1 ? { label: fam.name, variants, chunk: 2 } : null;
+  }
+  const variants = [vid, ...CESNI_MIX.filter((id) => id !== vid && ok(id))];
+  return variants.length > 1 ? { label: set === 'd5' ? 'beşliler' : 'dörtlüler', variants, chunk: 3 } : null;
+}
+export const mixNames = (set, mix) => mix.variants.map((v) => scaleFor(set, v).short).join(', ');
+
 const cumulative = (steps) => steps.reduce((acc, s) => { acc.push(acc[acc.length - 1] + s); return acc; }, [0]);
 const diffs = (k) => k.slice(1).map((x, i) => x - k[i]);
 

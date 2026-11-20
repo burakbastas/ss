@@ -207,10 +207,12 @@ function timelineRunner(root, step, opts, resolve) {
   let doneReps = 0;
   let active = 0;
   let lastT = null;
+  // Counters per exercise, and per çeşni or makam in Turkish-music runs.
   const exCount = {};
   const repsByEx = {};
   const secByEx = {};
-  const tmByEx = {};
+  const keyInfo = {};
+  const vkey = (ex) => (ex.isTm ? `${ex.id}|${ex.variant}` : ex.id);
   const ivTrials = [];
   const built = [];
 
@@ -219,10 +221,12 @@ function timelineRunner(root, step, opts, resolve) {
     onInfo: () => infoSheet(rep?.ex || firstEx, step.interleaved
       ? 'Bu blokta egzersizler birkaç tonda bir dönüşümlü gelir. İlk anda zor hissettirir ama araştırmalarda kalıcı öğrenmeyi artırdığı görülüyor.'
       : step.kind === 'glide' ? 'Kılavuz ses sirenin yolunu çizer; altta en pes sesten bir dem çalar. Melodi düğmesi kılavuz sesi açıp kapatır.'
+        : step.mixed ? `Karışık: ${step.mixed.names}. Her ${step.mixed.chunk} tonda bir sıradakine geçilir; benzer perdeleri art arda söylemek koma farklarını ayırt etmeyi güçlendirir. Akor yok, altta karar perdesinden dem çalar.`
         : firstEx.isTm ? 'Akor yerine karar perdesinden sürekli bir dem çalar; melodi çaldığında piyano onu iki oktav birden verir. Perdeler koma hassasiyetinde (1 koma ≈ 22,6 sent).'
           : settings.guide === 'fade' ? 'Melodi her egzersizin ilk iki tonunda piyanoda çalar, sonra yalnızca akorlar kalır. Melodi düğmesiyle istediğin zaman açıp kapatabilirsin.' : null),
   });
-  const meta = h('p', { class: 'run-meta' });
+  // Mixed runs change the scale text between reps; a fixed height keeps the roll steady.
+  const meta = h('p', { class: step.mixed ? 'run-meta fixed' : 'run-meta' });
   const focus = h('p', { class: 'run-focus' }, firstEx.focus);
   const canvas = h('canvas', { class: 'roll', 'aria-label': 'Söylenecek notalar ve eşlik' });
   const now = nowDisplay();
@@ -269,7 +273,7 @@ function timelineRunner(root, step, opts, resolve) {
     if (guideOverride != null) return guideOverride;
     if (settings.guide === 'always') return true;
     if (settings.guide === 'never') return false;
-    return (exCount[ex.id] || 0) < 2;
+    return (exCount[vkey(ex)] || 0) < 2;
   }
 
   // The siren guide tone is the accompaniment itself, so it stays on unless turned off.
@@ -296,8 +300,12 @@ function timelineRunner(root, step, opts, resolve) {
     playBtn.setAttribute('aria-label', 'Duraklat');
     guideBtn.setAttribute('aria-pressed', String(!!rep.guide));
     const ex = rep.ex;
-    if (ex.isTm) tmByEx[ex.id] = { tm: ex.variant, set: ex.set };
-    head.set({ title: ex.title, key: rep.kind === 'glide' ? '' : rep.label, count: `${i + 1}/${total}`, vowel: ex.vowel });
+    keyInfo[vkey(ex)] = ex.isTm ? { exId: ex.id, tm: ex.variant, set: ex.set } : { exId: ex.id };
+    // In a mixed run, say which çeşni or makam comes next while the intro plays.
+    const prev = step.mixed && i > 0 ? step.queue[i - 1] : null;
+    rep.cue = !!(step.mixed && ex.isTm && (!prev || prev.tm !== ex.variant));
+    const keyText = rep.kind === 'glide' ? '' : step.mixed && ex.isTm ? `${ex.sc.short}: ${rep.label}` : rep.label;
+    head.set({ title: ex.title, key: keyText, count: `${i + 1}/${total}`, vowel: ex.vowel });
     // Short form while singing; the full description is in the info sheet.
     meta.textContent = metaText(exMeta(ex).filter((m) => m !== ex.scaleInfo && m !== ex.arizalar));
     meta.hidden = !meta.textContent;
@@ -309,9 +317,9 @@ function timelineRunner(root, step, opts, resolve) {
   function endRep() {
     running = false;
     const ex = rep.ex;
-    exCount[ex.id] = (exCount[ex.id] || 0) + 1;
+    exCount[vkey(ex)] = (exCount[vkey(ex)] || 0) + 1;
     doneReps++;
-    if (rep.kind === 'pattern') (repsByEx[ex.id] ||= []).push(rep.root);
+    if (rep.kind === 'pattern') (repsByEx[vkey(ex)] ||= []).push(rep.root);
     i++;
     if (i >= total) { finish(true); return; }
     startRep();
@@ -349,7 +357,7 @@ function timelineRunner(root, step, opts, resolve) {
     if (running && lastT != null) {
       const dt = Math.min(0.25, Math.max(0, nowT - lastT));
       active += dt;
-      secByEx[rep.ex.id] = (secByEx[rep.ex.id] || 0) + dt;
+      secByEx[vkey(rep.ex)] = (secByEx[vkey(rep.ex)] || 0) + dt;
     }
     lastT = nowT;
     head.time(active);
@@ -389,7 +397,10 @@ function timelineRunner(root, step, opts, resolve) {
       const next = rep.targets.find((tg) => tg.t0 >= t);
       const first = rep.targets[0];
       if (rep.listen && t < rep.singStart - rep.beat) now.set(nm(first), 'Önce dinle', 'listen');
-      else if (t < rep.singStart) now.set(nm(first), `Hazırlan, ${Math.max(1, Math.ceil((rep.singStart - t) / rep.beat))}`, 'listen');
+      else if (t < rep.singStart) {
+        const n = Math.max(1, Math.ceil((rep.singStart - t) / rep.beat));
+        now.set(nm(first), rep.cue ? `${ex.sc.label}, hazırlan ${n}` : `Hazırlan, ${n}`, 'listen');
+      }
       else if (cur) now.set(nm(cur), sub(cur), 'sing');
       else if (next) now.set(nm(next), sub(next), 'sing');
       else now.set('Nefes', '', 'rest');
@@ -401,9 +412,9 @@ function timelineRunner(root, step, opts, resolve) {
     const at = Date.now();
     const sid = opts.sessionId || null;
     const out = [];
-    const extra = (exId) => ({ sec: Math.round(secByEx[exId] || 0), ...(tmByEx[exId] || {}) });
-    for (const [exId, roots] of Object.entries(repsByEx)) {
-      out.push({ exId, at, sessionId: sid, kind: 'pattern', keys: roots.length, roots, ...extra(exId) });
+    const extra = (k) => ({ sec: Math.round(secByEx[k] || 0), ...(keyInfo[k] || { exId: k }) });
+    for (const [k, roots] of Object.entries(repsByEx)) {
+      out.push({ at, sessionId: sid, kind: 'pattern', keys: roots.length, roots, ...extra(k) });
     }
     if (step.kind === 'glide' && doneReps) out.push({ exId: firstEx.id, at, sessionId: sid, kind: 'glide', reps: doneReps, ...extra(firstEx.id) });
     if (step.kind === 'interval' && ivTrials.length) {
@@ -414,8 +425,9 @@ function timelineRunner(root, step, opts, resolve) {
       });
     }
     // Stopped before the first full rep: keep the time anyway.
-    for (const [exId, sec] of Object.entries(secByEx)) {
-      if (sec >= 5 && !out.some((r) => r.exId === exId)) out.push({ exId, at, sessionId: sid, kind: 'time', ...extra(exId) });
+    for (const [k, sec] of Object.entries(secByEx)) {
+      const info = keyInfo[k] || { exId: k };
+      if (sec >= 5 && !out.some((r) => r.exId === info.exId && (r.tm || null) === (info.tm || null))) out.push({ at, sessionId: sid, kind: 'time', ...extra(k) });
     }
     await saveAll(out);
     return out;
