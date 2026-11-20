@@ -4,7 +4,7 @@ import { settings, db } from './f36qmgd.js';
 import { byId, RES, resolveEx } from './d8hbkej.js';
 import { buildRep, buildGlide, buildIntervalTrial } from './f6c5xz4.js';
 import { noteName } from './ewdv3t5.js';
-import { approxName } from './392vqcv.js';
+import { approxName, offsetText } from './392vqcv.js';
 import { drawRep, readPalette } from './zvga6p5.js';
 import { pianoTools } from './ybmk6gs.js';
 
@@ -75,12 +75,16 @@ function header({ title, onInfo }) {
   };
 }
 
+const sentence = (m) => (/[.!?)]$/.test(m) ? m : `${m}.`);
+export const metaText = (list) => list.map(sentence).join(' ');
+
 export function exMeta(ex) {
   return [
     ex.res ? `Yarı kapalı ses yolu: ${RES[ex.res]}` : null,
     ex.gear ? `Gereken: ${ex.gear}` : null,
     ex.scale || null,
-    ex.sc?.yapi ? `${ex.sc.yapi}. ${ex.sc.note}`.trim() : null,
+    ex.scaleInfo || null,
+    ex.arizalar || null,
   ].filter(Boolean);
 }
 
@@ -107,7 +111,8 @@ function nowDisplay() {
     set(text, subText = '', state = '') {
       if (big.textContent !== text) {
         big.textContent = text;
-        big.classList.toggle('long', text.length > 6);
+        big.classList.toggle('long', text.length > 6 && text.length <= 10);
+        big.classList.toggle('longer', text.length > 10);
       }
       if (sub.textContent !== subText) sub.textContent = subText;
       el.dataset.state = state;
@@ -293,7 +298,8 @@ function timelineRunner(root, step, opts, resolve) {
     const ex = rep.ex;
     if (ex.isTm) tmByEx[ex.id] = { tm: ex.variant, set: ex.set };
     head.set({ title: ex.title, key: rep.kind === 'glide' ? '' : rep.label, count: `${i + 1}/${total}`, vowel: ex.vowel });
-    meta.textContent = exMeta(ex).join('. ');
+    // Short form while singing; the full description is in the info sheet.
+    meta.textContent = metaText(exMeta(ex).filter((m) => m !== ex.scaleInfo && m !== ex.arizalar));
     meta.hidden = !meta.textContent;
     focus.textContent = ex.focus;
     progress.firstChild.style.width = `${(i / total) * 100}%`;
@@ -364,7 +370,12 @@ function timelineRunner(root, step, opts, resolve) {
     if (!running) return;
     // What to sing now
     const nm = (tg) => (tg.perde || noteName(tg.midi));
-    const sub = (tg) => tg.syl || (tg.perde ? approxName(tg.midi) : '');
+    const sub = (tg) => {
+      if (!tg.perde) return tg.syl || '';
+      const off = offsetText(tg.info);
+      const where = [off || approxName(tg.midi), tg.info?.note].filter(Boolean).join(', ');
+      return tg.syl ? `${tg.syl}: ${where}` : where;
+    };
     if (rep.kind === 'interval') {
       if (t < rep.singStart) now.set(noteName(rep.root), 'Dinle', 'listen');
       else if (t < rep.singEnd) now.set('?', `${rep.interval.name} ${rep.dir > 0 ? 'yukarı' : 'aşağı'}: söyle`, 'sing');

@@ -2,10 +2,11 @@ import { h, clear, segmented, fmtEst, fmtDuration } from './nyxk7bs.js';
 import { EXERCISES, CATS, TRADS, inTrad, tmOnly, resolveEx } from './d8hbkej.js';
 import { stepFor, historyIndex, variantsOfDay, variantFor, ofDayText } from './rdjz6js.js';
 import { runSingle } from './amcnm9m.js';
-import { exMeta } from './uhyk5uj.js';
+import { exMeta, metaText } from './uhyk5uj.js';
 import { settings, saveSettings, db } from './f36qmgd.js';
 import { ensureAudio } from './qpy3wmh.js';
 import { SET_VARIANTS, variantLabel } from './392vqcv.js';
+import { noteName, VOICES } from './ewdv3t5.js';
 
 export async function renderLibrary(main) {
   let results = [];
@@ -28,13 +29,18 @@ export async function renderLibrary(main) {
       const rex = resolveEx(ex, variant);
       const st = stepFor(ex, settings, null, variant);
       title.textContent = rex.title;
+      const roots = st.queue ? [...new Set(st.queue.map((q) => q.root))] : null;
+      const span = roots?.length
+        ? `${rex.isTm ? 'karar' : 'tonlar'} ${noteName(Math.min(...roots))}–${noteName(Math.max(...roots))} (${roots.length} ton)`
+        : null;
       info.textContent = [
         rex.vowel ? `“${rex.vowel}”` : null,
+        span,
         `yaklaşık ${fmtEst(st.estSec)}`,
         n ? `${n} kez çalışıldı${last ? `, son ${fmtDuration(last)}` : ''}` : 'henüz çalışılmadı',
       ].filter(Boolean).join(', ');
       const m = exMeta(rex);
-      meta.textContent = m.join('. ');
+      meta.textContent = metaText(m);
       meta.hidden = !m.length;
     };
     update();
@@ -57,7 +63,7 @@ export async function renderLibrary(main) {
 
   const render = () => {
     intro.textContent = trad === 'tm'
-      ? `Akor yok: piyano karar perdesinden sürekli bir dem tutar, melodi çaldığında onu iki oktav birden verir. Perdeler koma hassasiyetinde. ${ofDayText(ofDay)}`
+      ? `Akor yok: piyano karar perdesinden sürekli bir dem tutar, melodi çaldığında onu iki oktav birden verir. Perdeler koma hassasiyetinde. Karar perdesi ${VOICES[settings.voice]?.label.toLocaleLowerCase('tr') || 'senin'} sesine ve Ayarlar’daki alt-üst sınıra göre yerleşir, tonlar bu aralığın içinde kayar. ${ofDayText(ofDay)}`
       : `Piyano her tonda akorla eşlik eder; tonlar ${settings.voice === 'tenor' ? 'tenor' : 'seçtiğin ses'} aralığına göre yarım ses yarım ses kayar. Süreler bu aralığa göre hesaplanır; aralığı Ayarlar'dan değiştirebilirsin.`;
     const cats = Object.keys(CATS).filter((cat) => {
       const c = CATS[cat];

@@ -39,39 +39,73 @@ export function makeY(min, max, top, bottom) {
   return (m) => bottom - ((m - min) / span) * (bottom - top);
 }
 
-/** Perde lines for Turkish-music reps: one line per scale degree, named on the left. */
+/**
+ * Perde axis for Turkish-music reps. Scale perdeler are solid lines named on the left;
+ * the unaltered perdeler around them are dashed, so an altered perde can be read
+ * against its natural: a bracket joins the two and a badge gives the commas (♭5 =
+ * five commas below the natural).
+ */
 function drawPerde(g, { w, min, max, y, left, right, lines }) {
   const p = pal();
-  g.font = '600 11px "Atkinson Hyperlegible Next", system-ui, sans-serif';
-  g.textBaseline = 'middle';
-  g.textAlign = 'right';
-  for (let m = Math.ceil(min); m <= Math.floor(max); m++) {
-    const yy = Math.round(y(m)) + 0.5;
-    g.strokeStyle = p.grid;
-    g.lineWidth = 0.5;
-    g.beginPath();
-    g.moveTo(left, yy);
-    g.lineTo(w - right, yy);
-    g.stroke();
-  }
+  const font = (px, weight = 600) => `${weight} ${px}px "Atkinson Hyperlegible Next", system-ui, sans-serif`;
   const shown = lines.filter((ln) => ln.midi >= min && ln.midi <= max);
+  const labelX = left - 34;
   for (const ln of shown) {
     const yy = Math.round(y(ln.midi)) + 0.5;
-    g.strokeStyle = ln.karar ? alpha(p.target, 0.5) : alpha(p.muted, 0.35);
+    const altered = ln.kind === 'scale' && ln.sp && ln.sp.n;
+    g.setLineDash(ln.kind === 'natural' ? [3, 4] : []);
+    g.strokeStyle = ln.karar ? alpha(p.target, 0.55) : altered ? alpha(p.near, 0.5) : alpha(p.muted, ln.kind === 'natural' ? 0.32 : 0.42);
     g.lineWidth = ln.karar ? 1.4 : 1;
     g.beginPath();
     g.moveTo(left, yy);
     g.lineTo(w - right, yy);
     g.stroke();
   }
-  // Karar names first, then the others where they fit.
+  g.setLineDash([]);
+  // Brackets from each altered perde to its natural.
+  for (const ln of shown) {
+    if (!(ln.kind === 'scale' && ln.sp?.n && ln.natMidi != null)) continue;
+    const y0 = Math.round(y(ln.midi)) + 0.5;
+    const y1 = Math.round(y(Math.min(max, Math.max(min, ln.natMidi)))) + 0.5;
+    const x = left - 4.5;
+    g.strokeStyle = alpha(p.near, 0.85);
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(x - 4, y1);
+    g.lineTo(x, y1);
+    g.lineTo(x, y0);
+    g.lineTo(x + 4, y0);
+    g.stroke();
+  }
+  // Names: karar first, then scale perdeler, then naturals where they fit.
+  g.textBaseline = 'middle';
+  g.textAlign = 'right';
   const used = [];
-  for (const ln of [...shown.filter((l) => l.karar), ...shown.filter((l) => !l.karar)]) {
+  const order = [
+    ...shown.filter((l) => l.karar),
+    ...shown.filter((l) => l.kind === 'scale' && !l.karar),
+    ...shown.filter((l) => l.kind === 'natural'),
+  ];
+  const badges = [];
+  for (const ln of order) {
     const yy = Math.round(y(ln.midi)) + 0.5;
+    if (ln.kind === 'scale' && ln.sp?.n && !badges.some((b) => Math.abs(b - yy) < 10)) {
+      badges.push(yy);
+      g.font = font(11, 800);
+      g.fillStyle = p.near;
+      g.fillText(ln.sp.sym, left - 9, yy);
+    }
     if (used.some((u) => Math.abs(u - yy) < 11)) continue;
     used.push(yy);
-    g.fillStyle = ln.karar ? p.ink : p.muted;
-    g.fillText(ln.name, left - 6, yy);
+    const shift = ln.kw != null && ln.k !== ln.kw ? (ln.k < ln.kw ? ' ↓' : ' ↑') : '';
+    if (ln.kind === 'natural') {
+      g.font = font(10, 600);
+      g.fillStyle = alpha(p.muted, 0.85);
+    } else {
+      g.font = font(11, ln.karar ? 800 : 600);
+      g.fillStyle = ln.karar ? p.ink : p.muted;
+    }
+    g.fillText(ln.name + shift, labelX, yy);
   }
 }
 
@@ -138,7 +172,7 @@ export function drawRep(canvas, { rep, t, hideTargets = false, lane = false, mar
   const { g, w, h } = fitCanvas(canvas);
   const p = pal();
   g.clearRect(0, 0, w, h);
-  const left = rep.perdeLines ? 86 : 48;
+  const left = rep.perdeLines ? 116 : 48;
   const right = 14;
   const chordBand = rep.labels?.length ? 26 : 6;
   const laneH = lane ? Math.round(h * 0.18) : 0;

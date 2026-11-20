@@ -256,7 +256,9 @@ canvas.trail { width: 100%; height: 100%; display: block; }
 .run-head { display: grid; grid-template-columns: 44px 1fr 44px; gap: 8px; align-items: center; padding: 10px 10px 6px; }
 .run-titles { min-width: 0; }
 .run-title { font-size: var(--fs-2); font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.run-sub { display: flex; gap: 12px; flex-wrap: wrap; color: var(--muted); font-size: 0.9375rem; }
+.run-sub { display: flex; gap: 12px; flex-wrap: nowrap; overflow: hidden; color: var(--muted); font-size: 0.9375rem; }
+.run-sub > span { white-space: nowrap; }
+.run-sub > .vowel { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .run-sub .key { color: var(--ink); font-weight: 600; }
 .elapsed { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); font-variant-numeric: tabular-nums; }
 .elapsed .ico { color: var(--voice); }
@@ -265,7 +267,7 @@ canvas.trail { width: 100%; height: 100%; display: block; }
 .run-focus { padding: 10px 16px 4px; color: var(--muted); max-width: 70ch; }
 .run .stage { position: relative; padding: 8px 8px 0; min-height: 220px; flex: 1 1 auto; }
 canvas.roll { position: absolute; inset: 8px 8px 0; width: calc(100% - 16px); height: calc(100% - 8px); display: block; }
-.run-read { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 24px; padding: 8px 16px; }
+.run-read { display: flex; flex-wrap: nowrap; align-items: center; justify-content: space-between; gap: 6px 24px; padding: 8px 16px; min-width: 0; }
 .last { display: grid; gap: 6px; justify-items: start; font-weight: 600; min-height: 48px; align-content: center; }
 .dots { display: flex; gap: 6px; flex-wrap: wrap; }
 .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--muted); }
@@ -344,13 +346,18 @@ canvas.roll { position: absolute; inset: 8px 8px 0; width: calc(100% - 16px); he
 
 /* Piano-led runner */
 .run-meta { padding: 6px 16px 0; color: var(--muted); font-size: var(--fs-0); max-width: 70ch; }
-.now { display: grid; gap: 2px; min-width: 0; }
-.now-big { font-size: clamp(3rem, 13vw, 5.75rem); font-weight: 800; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; transition: color 120ms; }
-.now-big.long { font-size: clamp(2.1rem, 8.5vw, 3.9rem); line-height: 1.05; }
+.now { --big: clamp(3rem, 13vw, 5.75rem); display: grid; gap: 2px; min-width: 0; flex: 1 1 auto; }
+/* Fixed line boxes: the readout must not change height as names change, or the roll above resizes. */
+.now-big {
+  font-size: var(--big); font-weight: 800; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; transition: color 120ms;
+  height: calc(var(--big) * 1.1); line-height: calc(var(--big) * 1.1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.now-big.long { font-size: calc(var(--big) * 0.66); }
+.now-big.longer { font-size: calc(var(--big) * 0.5); }
 .now[data-state="listen"] .now-big, .now[data-state="rest"] .now-big { color: var(--muted); }
 .now[data-state="sing"] .now-big { color: var(--voice); }
 .now[data-state="answer"] .now-big { color: var(--hit); }
-.now-sub { color: var(--muted); font-weight: 600; min-height: 1.5em; }
+.now-sub { color: var(--muted); font-weight: 600; height: 1.5em; line-height: 1.5em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .run-side { display: grid; gap: 8px; justify-items: end; }
 .btn.guide[aria-pressed="true"] { border-color: var(--voice); color: var(--ink); box-shadow: inset 0 0 0 1px var(--voice); }
 .sustain-stage { flex: 1 1 auto; display: grid; place-content: center; justify-items: center; gap: 18px; padding: 24px 16px; text-align: center; }

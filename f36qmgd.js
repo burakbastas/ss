@@ -49,7 +49,7 @@ export const DEFAULTS = {
   a4: 440,
   noteNames: 'solfege',
   piano: 'sal',
-  guide: 'fade',
+  guide: 'always',
   accomp: 'akor',
   tempo: 1,
   volume: 0.8,
@@ -58,6 +58,7 @@ export const DEFAULTS = {
   sessionMin: 30,
   dem: 1,
   libTrad: 'bati',
+  sv: 3,
 };
 
 export const settings = { ...DEFAULTS };
@@ -67,6 +68,12 @@ export async function loadSettings() {
     const saved = await db.get('kv', 'settings');
     if (saved) Object.assign(settings, saved);
     if (!['akor', 'once'].includes(settings.accomp)) settings.accomp = 'akor';
+    // v3.2: the melody guide defaults to "always"; earlier saves only held the old default.
+    if (saved && (saved.sv || 0) < 3) {
+      if (settings.guide === 'fade') settings.guide = 'always';
+      settings.sv = 3;
+      await db.put('kv', { ...settings }, 'settings');
+    }
   } catch { /* first run or private mode */ }
   return settings;
 }

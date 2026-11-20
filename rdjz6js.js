@@ -3,14 +3,16 @@ import { planKeys, repSeconds, sustainNotes, glideSeconds, SUSTAIN_SEC, INTERVAL
 import { SET_VARIANTS, POOL, scaleFor } from './392vqcv.js';
 import { dayKey } from './nyxk7bs.js';
 
-// [slot, seconds, count, excluded cats]. 'tm' is the Turkish-music block: çeşni, makam
-// dizisi and (from 30 minutes) süsleme, all in the çeşni and makam of the day.
+// [slot, seconds, count, excluded cats]. 'tm' is the Turkish-music block: a straw, water
+// or lip-trill version first, then çeşni and makam dizisi on an open vowel and (from 30
+// minutes) süsleme, all in the çeşni and makam of the day.
 const TEMPLATES = {
-  15: [['sovt', 210], ['mix', 200, 2], ['tm', 200, 2], ['serbest', 0], ['sogu', 70]],
-  30: [['sovt', 360], ['mix', 420, 2], ['tm', 420, 3], ['messa', 100], ['aralik', 90], ['serbest', 0], ['sogu', 110]],
-  45: [['sovt', 420], ['mix', 540, 3, ['gecis']], ['gecis', 200], ['tm', 600, 3], ['vfe', 300], ['messa', 110], ['aralik', 120], ['serbest', 0], ['sogu', 140]],
+  15: [['sovt', 180], ['mix', 180, 2], ['tm', 260, 3], ['serbest', 0], ['sogu', 70]],
+  30: [['sovt', 330], ['mix', 390, 2], ['tm', 480, 4], ['messa', 100], ['aralik', 90], ['serbest', 0], ['sogu', 110]],
+  45: [['sovt', 390], ['mix', 510, 3, ['gecis']], ['gecis', 200], ['tm', 660, 4], ['vfe', 300], ['messa', 110], ['aralik', 120], ['serbest', 0], ['sogu', 140]],
 };
-const TM_SHARE = { 'tm-cesni': 0.38, 'tm-dizi': 0.36, 'tm-sus': 0.26 };
+const TM_PARTS = ['tm-sovt', 'tm-cesni', 'tm-dizi', 'tm-sus'];
+const TM_SHARE = { 'tm-sovt': 0.22, 'tm-cesni': 0.26, 'tm-dizi': 0.28, 'tm-sus': 0.24 };
 // Resistance order for the warm-up, after the review by Hijleh and Pinto (2021).
 const RES_ORDER = ['orta', 'yuksek', 'dusuk', 'aktarim'];
 
@@ -176,11 +178,14 @@ export function generatePlan({ minutes, settings, results, sessions, energy, rnd
         left -= st.estSec;
       });
     } else if (slot === 'tm') {
-      const cats = ['tm-cesni', 'tm-dizi', 'tm-sus'].slice(0, light ? Math.min(2, count) : count);
-      const shareSum = cats.reduce((a, c) => a + TM_SHARE[c], 0);
-      for (const c of cats) {
-        const ex = pick(c)[0];
-        steps.push(stepFor(ex, s, (sec * TM_SHARE[c]) / shareSum, variantFor(ex, ofDay)));
+      const parts = TM_PARTS.slice(0, light ? Math.min(3, count) : count);
+      const shareSum = parts.reduce((a, c) => a + TM_SHARE[c], 0);
+      for (const part of parts) {
+        const pool = part === 'tm-sovt'
+          ? EXERCISES.filter((e) => ['tm-cesni', 'tm-dizi'].includes(e.cat) && e.res)
+          : EXERCISES.filter((e) => e.cat === part && (part === 'tm-sus' || !e.res));
+        const ex = leastRecent(pool, hist, rnd)[0];
+        steps.push(stepFor(ex, s, (sec * (light ? 1.15 : 1) * TM_SHARE[part]) / shareSum, variantFor(ex, ofDay)));
       }
     } else if (slot === 'sogu') {
       const glide = leastRecent([byId['sogu-siren'], byId['sogu-su']], hist, rnd)[0];

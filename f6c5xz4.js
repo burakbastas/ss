@@ -1,6 +1,6 @@
 import { VOICES, INTERVALS, noteName } from './ewdv3t5.js';
 import { harmonize, voice, chordName } from './88d542p.js';
-import { scaleLines, k2st } from './392vqcv.js';
+import { perdeGrid, k2st } from './392vqcv.js';
 
 /** Time the runner leaves between scheduling and the start of each repetition. */
 export const REP_GAP = 0.12;
@@ -182,7 +182,7 @@ export function buildRep(ex, root, s, { guide = false } = {}) {
   for (let i = 0; i < n; i++) {
     const d = beatsOf(ex, i, n) * beat;
     const sound = ex.staccato ? d * 0.45 : d;
-    targets.push({ midi: root + ex.notes[i], t0: tt, t1: tt + sound, syl: ex.syl ? ex.syl[i] : null, perde: ex.perde ? ex.perde[i] : null });
+    targets.push({ midi: root + ex.notes[i], t0: tt, t1: tt + sound, syl: ex.syl ? ex.syl[i] : null, perde: ex.perde ? ex.perde[i] : null, info: ex.noteInfo ? ex.noteInfo[i] : null });
     tt += d;
   }
   if (ex.clicks) {
@@ -193,7 +193,9 @@ export function buildRep(ex, root, s, { guide = false } = {}) {
   if (ex.isTm) {
     const kMin = Math.min(...ex.komas);
     const kMax = Math.max(...ex.komas);
-    perdeLines = scaleLines(ex.sc, kMin - 6, kMax + 6).map((p) => ({ midi: root + k2st(p.k), name: p.name, karar: p.k % 53 === 0 }));
+    perdeLines = perdeGrid(ex.sc, kMin - 7, kMax + 7).map((p) => ({
+      ...p, midi: root + k2st(p.k), natMidi: p.sp && p.sp.n ? root + k2st(p.sp.nat - ex.sc.base) : null,
+    }));
   }
   return {
     kind: 'pattern', ex, root,

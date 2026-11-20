@@ -12,11 +12,11 @@ export const CATS = {
   },
   'tm-cesni': {
     label: 'Dörtlü ve beşliler (çeşniler)', short: 'Çeşni', trad: 'tm',
-    note: 'Makamların yapı taşları. Aralıklar Arel-Ezgi-Uzdilek sistemine göre koma hassasiyetinde çalınır: T tanini 9 koma, K büyük mücenneb 8, S küçük mücenneb 5, B bakiye 4, A artık ikili 12. Çeşni her gün değişir; listeden kendin de seçebilirsin.',
+    note: 'Makamların yapı taşları. Aralıklar Arel-Ezgi-Uzdilek sistemine göre koma hassasiyetinde çalınır: T tanini 9 koma, K büyük mücenneb 8, S küçük mücenneb 5, B bakiye 4, A artık ikili 12. Her çeşni kendi yedeniyle karara oturur: Rast ve Buselik’te 5 koma (Irak, Nim zirgüle), Uşşak, Kürdi ve Hicaz’da 9 koma (Rast), Çargah’ta 4 koma (Buselik) aşağıdan. Önce pipetle, sonra açık sesliyle. Çeşni her gün değişir; listeden kendin de seçebilirsin.',
   },
   'tm-dizi': {
     label: 'Makam dizileri', short: 'Makam dizisi', trad: 'tm',
-    note: 'Oktav arpejlerinin yerini alır: her dizi iki çeşninin birleşimidir, karar ve güçlü perdeleri seyrin iki ağırlık noktasıdır. Makam her gün değişir.',
+    note: 'Oktav arpejlerinin yerini alır. 18 makam: Rast, Uşşak, Neva, Hüseyni, Karcığar, Hicaz, Hümayun, Uzzal, Zirgüleli Hicaz, Kürdi, Buselik, Nihavent, Suzinak, Kürdilihicazkar, Mahur, Çargah, Acemaşiran, Saba. Her dizi kendi yedeniyle karara oturur; çıkışta ve inişte farklı basılan perdeler uygulanır. Makam her gün değişir.',
   },
   'tm-sus': {
     label: 'Süsleme (SOVT ile)', short: 'Süsleme', trad: 'tm',
@@ -51,16 +51,20 @@ const twiceDegs = (half, a, b) => {
 };
 
 const pipetSesli = twice(deg('1 2 3 4 5 4 3 2 1'), 'pipet', 'a');
-const pipetSesliTm = twiceDegs('1 2 3 4 5 4 3 2 1', 'pipet', 'a');
+const pipetSesliTm = twiceDegs('1 2 3 4 5 4 3 2 1 y 1', 'pipet', 'a');
 const carpma = twiceDegs('2 1 3 2 4 3 5 4 5', 'pipet', 'a');
 const mordan = twiceDegs('1 2 1 3 4 3 5 6 5 4 3 2 1', 'brrr', 'a');
-const donus = twiceDegs('2 1 -7 1 4 3 2 3 6 5 4 5 5', 'su', 'a');
+const donus = twiceDegs('2 1 y 1 4 3 2 3 6 5 4 5 5', 'su', 'a');
 const uzunHava = twiceDegs('4 5 4 3 4 3 2 1', 'brrr', 'a');
+const pipetDortlu = twiceDegs('1 2 3 4 3 2 1 y 1', 'pipet', 'a');
+const pipetDizi = twiceDegs('1 2 3 4 5 6 7 8 7 6 5 4 3 2 1 y 1', 'pipet', 'a');
+const halves = (n, last) => [...Array(n - 1).fill(0.5), last];
 
-const BESLI_TM = { set: 'd5', degs: '1 2 3 4 5 4 3 2 1', beats: 0.5, lastBeats: 1.5, bpm: 72 };
-const DIZI_TM = { set: 'dizi', degs: '1 2 3 4 5 6 7 8 7 6 5 4 3 2 1', beats: 0.5, lastBeats: 2, bpm: 72 };
+// Turkish-music versions end on the karar through the makam's own yeden.
+const BESLI_TM = { set: 'd5', degs: '1 2 3 4 5 4 3 2 1 y 1', beats: 0.5, lastBeats: 1.5, bpm: 72 };
+const DIZI_TM = { set: 'dizi', degs: '1 2 3 4 5 6 7 8 7 6 5 4 3 2 1 y 1', beats: 0.5, lastBeats: 2, bpm: 72 };
 
-/** Karar to güçlü, a turn around the güçlü, back down to the karar. */
+/** Karar to güçlü, a turn around the güçlü, back down to the karar through the yeden. */
 function gucluSeyir(sc) {
   const g = sc.guclu + 1;
   const degs = [];
@@ -68,7 +72,9 @@ function gucluSeyir(sc) {
   for (let d = 1; d <= g; d++) { degs.push(d); beats.push(d === g ? 1.5 : 0.5); }
   degs.push(g + 1, g, g - 1, g);
   beats.push(0.5, 0.5, 0.5, 1.5);
-  for (let d = g - 1; d >= 1; d--) { degs.push(d); beats.push(d === 1 ? 2 : 0.5); }
+  for (let d = g - 1; d >= 1; d--) { degs.push(d); beats.push(0.5); }
+  degs.push('y', 1);
+  beats.push(0.5, 2);
   return { degs, beats };
 }
 
@@ -94,7 +100,6 @@ export const EXERCISES = [
     vowel: 'pipet', gear: 'normal içecek pipeti', acc: 'broken',
     notes: deg('1 3 5 8 5 3 1'), beats: 1, lastBeats: 2, bpm: 80,
     zone: { lo: 0, hi: 1 }, dir: 'updown',
-    tm: { ...DIZI_TM, title: 'Pipetle makam dizisi' },
     how: 'Notalar arasında hafifçe kaydır. Tepe notada pipetteki hava akışını artırma, aynı bırak.',
     focus: 'Sesin pipetten çıkıp bir kemer çizerek karşıya indiğini düşün.',
   },
@@ -110,7 +115,7 @@ export const EXERCISES = [
     vowel: 'pipet suda', gear: 'pipet ve su bardağı (2–3 cm)', acc: 'pad',
     notes: deg('1 2 3 2 1'), beats: 1, lastBeats: 2, bpm: 66,
     zone: { lo: 2, hi: 6 }, dir: 'up',
-    tm: { set: 'd4', degs: '1 2 3 2 1', beats: 1, lastBeats: 2, bpm: 66 },
+    tm: { set: 'd4', degs: '1 2 3 2 1 y 1', beats: 1, lastBeats: 2, bpm: 66 },
     how: 'Kabarcıklar her notada aynı ritimde kalsın. Kabarcık kesiliyorsa hava akışı düşmüştür.',
     focus: 'Suyun yüzeyindeki kıpırtının hiç durmadığını düşün.',
   },
@@ -127,7 +132,6 @@ export const EXERCISES = [
     vowel: 'brrr', acc: 'broken',
     notes: deg('1 3 5 8 5 3 1'), beats: 0.5, lastBeats: 1.5, bpm: 76,
     zone: { lo: 0, hi: 1 }, dir: 'updown',
-    tm: { ...DIZI_TM, title: 'Dudak titreşimiyle makam dizisi' },
     how: 'Atlamalarda titreşim kopmasın. Tepe notaya itmeden, kaydırarak ulaş.',
     focus: 'Titreşimin bir yay gibi yukarı çıkıp aşağı indiğini düşün.',
   },
@@ -144,7 +148,7 @@ export const EXERCISES = [
     vowel: 'mmm', acc: 'pad',
     notes: deg('5 4 3 2 1'), beats: 1, lastBeats: 2, bpm: 76,
     zone: { lo: 0, hi: 4 }, dir: 'updown',
-    tm: { set: 'd5', degs: '5 4 3 2 1', beats: 1, lastBeats: 2, bpm: 72 },
+    tm: { set: 'd5', degs: '5 4 3 2 1 y 1', beats: 1, lastBeats: 2, bpm: 72 },
     how: 'Dudaklar kapalı, dişler ayrık. Sesi burun ve dudak çevresinde hissedecek kadar yumuşak başla.',
     focus: 'Sesin dudaklarının hemen önünde, havada asılı durduğunu düşün.',
   },
@@ -171,7 +175,7 @@ export const EXERCISES = [
     vowel: 'önce pipet, sonra a', gear: 'normal içecek pipeti', acc: 'pad',
     notes: pipetSesli.notes, syl: pipetSesli.syl, beats: [...Array(8).fill(0.5), 1, ...Array(8).fill(0.5), 1.5], bpm: 76,
     zone: { lo: 0, hi: 3 }, dir: 'updown',
-    tm: { set: 'd5', degs: pipetSesliTm.degs, syl: pipetSesliTm.syl, beats: [...Array(8).fill(0.5), 1, ...Array(8).fill(0.5), 1.5], bpm: 72 },
+    tm: { set: 'd5', degs: pipetSesliTm.degs, syl: pipetSesliTm.syl, beats: [...halves(11, 1), ...halves(11, 1.5)], bpm: 72 },
     how: 'Kalıbı önce pipetle söyle; pipeti çek, aynı kalıbı “a” ile pipetteki hafifliği koruyarak tekrarla.',
     focus: '“a”da da sesin pipetteki kadar kolay ve ileride aktığını düşün.',
   },
@@ -196,40 +200,80 @@ export const EXERCISES = [
 
   // Dörtlü ve beşliler
   {
-    id: 'cesni-4', cat: 'tm-cesni', type: 'pattern', title: 'Dörtlü çıkış ve iniş', vowel: 'a',
-    tm: { set: 'd4', degs: '1 2 3 4 3 2 1', beats: 1, lastBeats: 2, bpm: 72 },
+    id: 'pipet-dortlu', cat: 'tm-cesni', type: 'pattern', res: 'orta', title: 'Pipetle dörtlü, sonra a',
+    vowel: 'önce pipet, sonra a', gear: 'normal içecek pipeti',
+    tm: { set: 'd4', degs: pipetDortlu.degs, syl: pipetDortlu.syl, beats: [...halves(9, 1.5), ...halves(9, 2)], bpm: 72 },
     zone: { lo: 0, hi: 2 }, dir: 'updown',
-    how: 'Çeşninin dört sesini bağlı söyle. Her perdeyi alttaki demle karşılaştır: dar aralıklar (bakiye, küçük mücenneb) ile geniş olanları (tanini, artık ikili) birbirine karıştırma.',
+    how: 'Çeşniyi önce pipetle söyle: pipette ses telleri yumuşak çarpıştığı için dar koma aralıklarını gırtlağı sıkmadan bulursun. Kararın altındaki yedene inip karara dön. Sonra pipeti çek, aynı perdeleri “a” ile tekrarla.',
+    focus: '“a”ya geçince perdelerin pipetteki yerinden kaymadığını dinle.',
+  },
+  {
+    id: 'su-besli', cat: 'tm-cesni', type: 'pattern', res: 'yuksek', title: 'Suda pipetle beşli',
+    vowel: 'pipet suda', gear: 'pipet ve su bardağı (2–3 cm)',
+    tm: { set: 'd5', degs: '1 2 3 4 5 4 3 2 1 y 1', beats: 0.5, lastBeats: 1.5, bpm: 66 },
+    zone: { lo: 0, hi: 3 }, dir: 'updown',
+    how: 'Pipetin ucu 2–3 cm suda. Kabarcıklar her perdede aynı ritimde kalsın; koma aralıklarında hava akışını değiştirme, yalnızca perdeyi değiştir.',
+    focus: 'Kabarcıkların perdeler değişirken de eşit aktığını izle.',
+  },
+  {
+    id: 'cesni-4', cat: 'tm-cesni', type: 'pattern', title: 'Dörtlü çıkış ve iniş', vowel: 'a',
+    tm: { set: 'd4', degs: '1 2 3 4 3 2 1 y 1', beats: 1, lastBeats: 2, bpm: 72 },
+    zone: { lo: 0, hi: 2 }, dir: 'updown',
+    how: 'Çeşninin dört sesini bağlı söyle, karara inince yedene değip karara dön. Her perdeyi alttaki demle karşılaştır: dar aralıklar (bakiye, küçük mücenneb) ile geniş olanları (tanini, artık ikili) birbirine karıştırma.',
     focus: 'Her perdenin demin üstüne kendi yerinde oturduğunu dinle.',
   },
   {
     id: 'cesni-5', cat: 'tm-cesni', type: 'pattern', title: 'Beşli çıkış ve iniş', vowel: 'a',
-    tm: { set: 'd5', degs: '1 2 3 4 5 4 3 2 1', beats: 1, lastBeats: 2, bpm: 76 },
+    tm: { set: 'd5', degs: '1 2 3 4 5 4 3 2 1 y 1', beats: 1, lastBeats: 2, bpm: 76 },
     zone: { lo: 0, hi: 2 }, dir: 'updown',
     how: 'Beşlinin tepe sesine çıkıp karara dön. İnerken perdeler kayma eğilimindedir; özellikle Segah ve Eviç gibi bir koma pes perdeleri yerinde tut.',
     focus: 'Çıkışta ve inişte aynı perdenin aynı yere düştüğünü dinle.',
   },
   {
     id: 'cesni-gruplar', cat: 'tm-cesni', type: 'pattern', title: 'Beşli, üçlü gruplarla', vowel: 'e',
-    tm: { set: 'd5', degs: '1 2 3 2 3 4 3 4 5 4 3 2 1', beats: 0.5, lastBeats: 2, bpm: 70 },
+    tm: { set: 'd5', degs: '1 2 3 2 3 4 3 4 5 4 3 2 1 y 1', beats: 0.5, lastBeats: 2, bpm: 70 },
     zone: { lo: 0, hi: 2 }, dir: 'updown',
     how: 'Üçer sesli küçük gruplarla beşliyi tırman. Grupların dönüş noktasında perdeyi kaydırmadan doğrudan bas.',
     focus: 'Grupları tespihin taneleri gibi eşit ve yuvarlak düşün.',
   },
   {
     id: 'cesni-inis', cat: 'tm-cesni', type: 'pattern', title: 'Beşliden karara iniş', vowel: 'a',
-    tm: { set: 'd5', degs: '5 4 3 2 1', beats: [2, 1, 1, 1, 3], bpm: 66 },
+    tm: { set: 'd5', degs: '5 4 3 2 1 y 1', beats: [2, 1, 1, 1, 1, 1, 3], bpm: 66 },
     zone: { lo: 0, hi: 2 }, dir: 'down',
-    how: 'Türk müziğinde cümleler çoğunlukla karara inerek biter. Tepe sesi uzun tut, sonra her perdeye basarak in; kararda sesi demle birleştir.',
+    how: 'Türk müziğinde cümleler çoğunlukla karara inerek biter. Tepe sesi uzun tut, sonra her perdeye basarak in, yedenden karara otur; kararda sesi demle birleştir.',
     focus: 'Karara indiğinde sesinin demle tek bir ses gibi kaynaştığını dinle.',
   },
 
   // Makam dizileri
   {
-    id: 'dizi-oktav', cat: 'tm-dizi', type: 'pattern', title: 'Makam dizisi çıkış ve iniş', vowel: 'a',
-    tm: { set: 'dizi', degs: '1 2 3 4 5 6 7 8 7 6 5 4 3 2 1', beats: 0.5, lastBeats: 2, bpm: 66 },
+    id: 'pipet-dizi', cat: 'tm-dizi', type: 'pattern', res: 'orta', title: 'Pipetle makam dizisi, sonra a',
+    vowel: 'önce pipet, sonra a', gear: 'normal içecek pipeti',
+    tm: { set: 'dizi', degs: pipetDizi.degs, syl: pipetDizi.syl, beats: [...halves(17, 1.5), ...halves(17, 2)], bpm: 76 },
     zone: { lo: 0, hi: 0 }, dir: 'updown',
-    how: 'Karardan tiz durağa çık, aynı yoldan in. Dizinin iki çeşnisini ayrı ayrı duy: alttaki dörtlü ya da beşli, üstteki beşli ya da dörtlü. Rast’ta inerken Eviç yerine Acem gelir.',
+    how: 'Diziyi önce pipetle çık ve in, yedenden karara otur; sonra pipeti çekip aynı diziyi “a” ile söyle. Çıkışla inişte farklı basılan perdeler varsa (Rast’ta Eviç ve Acem gibi) çizgide ikisi de görünür.',
+    focus: 'Pipetteki kolaylığı “a”da da koru; tiz durağa itmeden ulaş.',
+  },
+  {
+    id: 'dudak-dizi', cat: 'tm-dizi', type: 'pattern', res: 'dusuk', title: 'Dudak titreşimiyle makam dizisi',
+    vowel: 'brrr',
+    tm: { ...DIZI_TM },
+    zone: { lo: 0, hi: 0 }, dir: 'updown',
+    how: 'Dudaklar gevşek, titreşim dizinin başından sonuna kesilmesin. Artık ikili gibi geniş aralıklarda titreşimi koparmadan kaydır.',
+    focus: 'Titreşimin perdeler değişirken aynı hızda döndüğünü dinle.',
+  },
+  {
+    id: 'su-guclu', cat: 'tm-dizi', type: 'pattern', res: 'yuksek', title: 'Suda pipetle güçlüde durak',
+    vowel: 'pipet suda', gear: 'pipet ve su bardağı (2–3 cm)',
+    tm: { set: 'dizi', degs: gucluSeyir, bpm: 66 },
+    zone: { lo: 0, hi: 1 }, dir: 'up',
+    how: 'Suda pipetle karardan güçlüye çık, güçlüde dur, karara yedenle in. Kabarcıklar güçlüde de eşit kalsın.',
+    focus: 'Güçlüde kabarcıkların sakin ve düzenli kaldığını izle.',
+  },
+  {
+    id: 'dizi-oktav', cat: 'tm-dizi', type: 'pattern', title: 'Makam dizisi çıkış ve iniş', vowel: 'a',
+    tm: { set: 'dizi', degs: '1 2 3 4 5 6 7 8 7 6 5 4 3 2 1 y 1', beats: 0.5, lastBeats: 2, bpm: 66 },
+    zone: { lo: 0, hi: 0 }, dir: 'updown',
+    how: 'Karardan tiz durağa çık, aynı yoldan in ve yedenden karara otur. Dizinin iki çeşnisini ayrı ayrı duy. Bazı makamlarda inerken başka perde basılır: Rast, Neva, Hüseyni ve Uzzal’da Eviç yerine Acem, Uşşak’ta Segah biraz daha pest.',
     focus: 'Güçlü perdesinden geçerken sesinin hiç düşmediğini dinle.',
   },
   {
@@ -241,9 +285,9 @@ export const EXERCISES = [
   },
   {
     id: 'dizi-tiz', cat: 'tm-dizi', type: 'pattern', title: 'Tiz duraktan karara', vowel: 'e',
-    tm: { set: 'dizi', degs: '8 7 6 5 4 3 2 1', beats: 1, lastBeats: 3, bpm: 72 },
+    tm: { set: 'dizi', degs: '8 7 6 5 4 3 2 1 y 1', beats: 1, lastBeats: 3, bpm: 72 },
     zone: { lo: 0, hi: 0 }, dir: 'down',
-    how: 'Karardan bir oktav yukarıdaki tiz durağı hafifçe başlat ve dizi boyunca karara in. İniş Türk müziği seyrinin temel yönü; perdeler inerken tizleşmesin.',
+    how: 'Karardan bir oktav yukarıdaki tiz durağı hafifçe başlat ve dizi boyunca karara in, yedene değip karara otur. Mahur, Kürdilihicazkar ve Acemaşiran gibi inici makamların seyri tam da böyledir.',
     focus: 'İnişin bir yokuştan sakin adımlarla inmek gibi eşit olduğunu düşün.',
   },
 
@@ -269,7 +313,7 @@ export const EXERCISES = [
     vowel: 'önce suda pipet, sonra a', gear: 'pipet ve su bardağı (2–3 cm)',
     tm: { set: 'dizi', degs: donus.degs, syl: donus.syl, beats: [...Array(12).fill(0.25), 2, ...Array(12).fill(0.25), 2], bpm: 60 },
     zone: { lo: 2, hi: 2 }, dir: 'up',
-    how: 'Üst komşu, ana ses, alt komşu, ana ses. Kararın altındaki komşu makamın yedenidir (Rast’ta Irak, Hicaz’da Rast). Suda pipetle kabarcıklar dönüş boyunca kesilmesin; sonra “a” ile aynı akış.',
+    how: 'Üst komşu, ana ses, alt komşu, ana ses. Kararın altındaki komşu makamın yedenidir (Rast’ta Irak, Hicaz’da Rast, Buselik’te Nim zirgüle, Mahur’da Geveşt). Suda pipetle kabarcıklar dönüş boyunca kesilmesin; sonra “a” ile aynı akış.',
     focus: 'Dönüşün suyun içinde küçük bir girdap gibi döndüğünü düşün.',
   },
   {
@@ -438,6 +482,7 @@ export const tmOnly = (ex) => CATS[ex.cat]?.trad === 'tm';
 /** Exercises shown in a section of the library. */
 export function inTrad(ex, trad) {
   const t = CATS[ex.cat]?.trad;
+  if (t === 'ortak' && trad === 'tm' && ex.type === 'pattern') return !!ex.tm;
   return t === 'ortak' || t === trad;
 }
 
