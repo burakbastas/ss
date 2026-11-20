@@ -1,0 +1,16 @@
+{
+  "name": "Etüt",
+  "short_name": "Etüt",
+  "lang": "tr",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#15172c",
+  "theme_color": "#15172c",
+  "icons": [
+    { "src": "xppxxid.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "25rkr96.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "kjx6cc8.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
