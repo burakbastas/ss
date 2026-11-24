@@ -465,9 +465,9 @@ export const EXERCISES = [
     focus: 'Sesin dudaklarının önünde sakin bir uğultu olarak kaldığını düşün.',
   },
 
-  // Repertuvar
+  // Repertuvar: removed from the library in v3.5; kept so older results keep their title.
   {
-    id: 'repertuvar', cat: 'serbest', type: 'free', title: 'Repertuvar',
+    id: 'repertuvar', cat: 'serbest', type: 'free', title: 'Repertuvar', retired: true,
     vowel: '', minutes: 8,
     how: 'Çalıştığın eseri söyle. Başlangıç sesini ve akorları alttaki piyanodan alabilirsin. Zorlandığın pasajı önce pipetle, sonra sözle dene.',
     focus: 'Sözün anlamını ve dinleyiciye ne anlatmak istediğini düşün.',

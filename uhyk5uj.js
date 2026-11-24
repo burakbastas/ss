@@ -6,7 +6,6 @@ import { buildRep, buildGlide, buildIntervalTrial } from './f6c5xz4.js';
 import { noteName } from './ewdv3t5.js';
 import { approxName, offsetText } from './392vqcv.js';
 import { drawRep, readPalette } from './zvga6p5.js';
-import { pianoTools } from './ybmk6gs.js';
 
 /* ---------- overlay ---------- */
 
@@ -190,7 +189,7 @@ export function runStep(root, step, opts = {}) {
         if (!ok) toast('Piyano sesleri yüklenemedi; yedek ses kullanılıyor.');
       }
       if (aborted) { resolve({ completed: false, results: [], sec: 0 }); return; }
-      const make = step.kind === 'sustain' ? sustainRunner : step.kind === 'free' ? freeRunner : timelineRunner;
+      const make = step.kind === 'sustain' ? sustainRunner : timelineRunner;
       ctl = make(root, step, opts, resolve);
     };
     boot();
@@ -548,49 +547,6 @@ function sustainRunner(root, step, opts, resolve) {
   }
 
   enter();
-  return { abort: () => finish(false) };
-}
-
-/* ---------- free practice (repertoire) ---------- */
-
-function freeRunner(root, step, opts, resolve) {
-  const ex = byId[step.exId];
-  const limit = (step.minutes || ex.minutes || 8) * 60;
-  const started = Date.now();
-  let done = false;
-  let warned = false;
-  const head = header({ title: ex.title, onInfo: () => infoSheet(ex) });
-  const clock = h('div', { class: 'clock' }, '');
-  const note = h('textarea', { class: 'input', rows: 2, placeholder: 'Hangi eser, hangi pasaj? Ne fark ettin?', id: 'free-note' });
-  const tools = pianoTools({ compact: true });
-
-  clear(root, h('div', { class: 'run' },
-    head.el,
-    h('p', { class: 'run-focus' }, ex.focus),
-    h('div', { class: 'free-body' }, tools.el, h('label', { class: 'field' }, h('span', null, 'Not'), note)),
-    h('footer', { class: 'run-ctrl' }, clock, h('button', { class: 'btn primary', type: 'button', onclick: () => finish(true) }, 'Bitir'))));
-  head.set({ count: `${Math.round(limit / 60)} dk ayrıldı` });
-
-  const tick = setInterval(() => {
-    const el = (Date.now() - started) / 1000;
-    const left = limit - el;
-    head.time(el);
-    clock.textContent = left >= 0
-      ? `${fmtClock(left)} kaldı`
-      : `Süre doldu, +${fmtClock(-left)}`;
-    if (left < 0 && !warned) { warned = true; toast('Ayrılan süre doldu. İstersen devam et.'); }
-  }, 500);
-
-  async function finish(completed) {
-    if (done) return;
-    done = true;
-    clearInterval(tick);
-    const sec = (Date.now() - started) / 1000;
-    const r = { exId: ex.id, at: Date.now(), sessionId: opts.sessionId || null, kind: 'free', sec: Math.round(sec), note: note.value.trim() };
-    await saveAll([r]);
-    resolve({ completed, results: [r], exIds: [ex.id], sec });
-  }
-
   return { abort: () => finish(false) };
 }
 

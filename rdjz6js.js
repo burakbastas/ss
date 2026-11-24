@@ -1,5 +1,5 @@
 import { EXERCISES, byId, CATS, TECH_CATS, resolveEx } from './d8hbkej.js';
-import { planKeys, repSeconds, sustainNotes, glideSeconds, SUSTAIN_SEC, INTERVAL_SEC } from './f6c5xz4.js';
+import { planKeys, keysFor, repSeconds, sustainNotes, glideSeconds, SUSTAIN_SEC, INTERVAL_SEC } from './f6c5xz4.js';
 import { SET_VARIANTS, POOL, scaleFor, mixFor, mixNames } from './392vqcv.js';
 import { dayKey } from './nyxk7bs.js';
 
@@ -113,9 +113,14 @@ export function stepFor(ex, s, maxSec, variant = null) {
   return { ...base, kind: 'free', minutes, estSec: minutes * 60 };
 }
 
+// How many times a mixed run goes round its çeşniler or makamlar.
+export const MIX_ROUNDS = 2;
+
 /**
- * Mixed Turkish-music run: the keys sweep the range as usual while the çeşni or makam
- * changes every `chunk` keys, starting with vid. Keys fit every variant in the mix.
+ * Mixed Turkish-music run: the çeşni or makam changes every `chunk` keys, starting with
+ * vid, and the run is long enough for every variant in the mix to come round MIX_ROUNDS
+ * times (at least one full sweep of the range). Keys keep sweeping the range, repeating
+ * it as often as needed, and fit every variant in the mix.
  */
 export function stepForMix(ex, s, maxSec, vid, allowed = null) {
   const mix = ex.tm ? mixFor(ex.tm.set, vid, allowed) : null;
@@ -125,12 +130,16 @@ export function stepForMix(ex, s, maxSec, vid, allowed = null) {
   const lo = Math.min(...all.map((r) => Math.min(...r.notes)));
   const hi = Math.max(...all.map((r) => Math.max(...r.notes)));
   const per = all.reduce((a, r) => a + repSeconds(r, s), 0) / all.length;
-  const keys = planKeys({ ...all[0], notes: [lo, hi] }, s, maxSec, per);
+  const sweep = keysFor({ ...all[0], notes: [lo, hi] }, s);
+  let n = Math.max(sweep.length, mix.variants.length * mix.chunk * MIX_ROUNDS);
+  n = Math.ceil(n / mix.chunk) * mix.chunk;
+  if (maxSec) n = Math.max(mix.chunk * Math.min(mix.variants.length, 3), Math.min(n, Math.floor(maxSec / per)));
+  const keys = Array.from({ length: n }, (_, i) => sweep[i % sweep.length]);
   const queue = keys.map((root, i) => ({ exId: ex.id, root, tm: mix.variants[Math.floor(i / mix.chunk) % mix.variants.length] }));
   return {
     exId: ex.id, cat: ex.cat, tm: vid, kind: 'queue', queue,
     title: `${all[0].title}: ${mix.label}, karışık`,
-    mixed: { label: mix.label, names: mixNames(ex.tm.set, mix), chunk: mix.chunk, variants: mix.variants },
+    mixed: { label: mix.label, names: mixNames(ex.tm.set, mix), chunk: mix.chunk, variants: mix.variants, rounds: Math.max(1, Math.floor(n / (mix.chunk * mix.variants.length))) },
     estSec: queue.reduce((a, q) => a + repSeconds(rexs[q.tm], s), 0),
   };
 }

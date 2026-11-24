@@ -128,7 +128,7 @@ export function renderSettings(main) {
 
     h('section', { class: 'set-group' },
       h('h2', null, 'Veriler'),
-      h('p', { class: 'help' }, 'Veriler yalnızca bu cihazda tutulur. Telefon, tablet ve bilgisayar arasında taşımak için yedeği dışa aktarıp diğer cihazda içe aktar. Ses kayıtları yedeğe girmez.'),
+      h('p', { class: 'help' }, 'Veriler yalnızca bu cihazda tutulur. Telefon, tablet ve bilgisayar arasında taşımak için yedeği dışa aktarıp diğer cihazda içe aktar.'),
       h('div', { class: 'row wrap' },
         h('button', {
           class: 'btn', type: 'button',
@@ -143,7 +143,7 @@ export function renderSettings(main) {
         h('button', {
           class: 'btn danger', type: 'button',
           onclick: async () => {
-            if (!(await confirmDialog('Tüm seanslar, sonuçlar ve kayıtlar silinsin mi? Geri alınamaz.', 'Hepsini sil'))) return;
+            if (!(await confirmDialog('Bütün çalışma geçmişi silinsin mi? Geri alınamaz.', 'Hepsini sil'))) return;
             await Promise.all(['sessions', 'results', 'recs'].map((s) => db.clear(s)));
             await saveSettings({ ...DEFAULTS, outputId: settings.outputId });
             toast('Veriler silindi.');

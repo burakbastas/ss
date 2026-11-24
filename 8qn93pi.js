@@ -4,8 +4,6 @@ import { configureMusic } from './ewdv3t5.js';
 import { applyTheme } from './w7vpbjf.js';
 import { renderToday } from './nx8kc5c.js';
 import { renderLibrary } from './5axywum.js';
-import { renderPiano } from './bdicq9j.js';
-import { renderRecordings } from './7uhqccq.js';
 import { renderSettings } from './4jze4k2.js';
 import { inIframe, initAudio, loadPiano, ensureAudio } from './qpy3wmh.js';
 
@@ -14,8 +12,6 @@ const SW_URL = './syj8mjz.js';
 const ROUTES = [
   { id: 'bugun', label: 'İlerleme', icon: 'today', render: renderToday },
   { id: 'egzersiz', label: 'Egzersizler', icon: 'list', render: renderLibrary },
-  { id: 'piyano', label: 'Piyano', icon: 'keys', render: renderPiano },
-  { id: 'kayit', label: 'Kayıtlar', icon: 'rec', render: renderRecordings },
   { id: 'ayar', label: 'Ayarlar', icon: 'settings', render: renderSettings },
 ];
 

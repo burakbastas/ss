@@ -4,7 +4,6 @@ import { POOL } from './392vqcv.js';
 import { dayKey } from './nyxk7bs.js';
 
 export const RES_ORDER = ['orta', 'yuksek', 'dusuk', 'aktarim'];
-export const TRAD_LABEL = { bati: 'Batı', tm: 'Türk müziği', ortak: 'Ortak (SOVT, VFE, soğuma, repertuvar)' };
 
 /** Category of a result: stored on new rows, looked up from the exercise for older ones. */
 export const catOf = (r) => r.cat || byId[r.exId]?.cat || 'diger';

@@ -163,7 +163,7 @@ function renderSpread(box, b, period) {
     bars(b.cats, b.total, catLabel),
     h('h3', null, 'Bölüm'),
     bars(trads, b.total, (k) => TRADS[k]),
-    h('p', { class: 'muted small' }, 'Ortak: SOVT, VFE, soğuma ve repertuvar. Bunların dem ile çalışılan Türk müziği sürümleri Türk müziğine sayılır.'),
+    h('p', { class: 'muted small' }, 'Ortak: iki bölümde de bulunan SOVT, VFE ve soğuma egzersizleri. Bunların dem ile çalışılan Türk müziği sürümleri Türk müziğine sayılır.'),
     b.resSec ? h('p', { class: 'muted' }, resText(b)) : null,
     b.cesni.length ? h('p', { class: 'muted' }, `Çeşniler: ${names(b.cesni, 'd5')}.`) : null,
     b.makam.length ? h('p', { class: 'muted' }, `Makamlar: ${names(b.makam, 'dizi')}.`) : null);

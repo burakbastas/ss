@@ -41,7 +41,7 @@ export async function renderLibrary(main) {
   const picks = h('div', { class: 'tm-pick' });
   const body = h('div', { class: 'lib-body' });
 
-  const listFor = (cat) => EXERCISES.filter((e) => e.cat === cat && inTrad(e, trad) && (trad === 'tm' || !tmOnly(e)));
+  const listFor = (cat) => EXERCISES.filter((e) => !e.retired && e.cat === cat && inTrad(e, trad) && (trad === 'tm' || !tmOnly(e)));
   const catsHere = () => Object.keys(CATS).filter((c) => (CATS[c].trad === 'ortak' || CATS[c].trad === trad) && listFor(c).length);
 
   /** Turkish-music variant of a row: the picked çeşni or makam (null in the Western section). */
@@ -82,7 +82,7 @@ export async function renderLibrary(main) {
         rex.vowel ? h('p', { class: 'muted small' }, `Ses: ${rex.vowel}`) : null,
         facts.length ? h('p', { class: 'muted small' }, metaText(facts)) : null,
         hx?.count ? h('p', { class: 'muted small' }, `${hx.count} kez çalışıldı, toplam ${fmtDuration(hx.sec)}.`) : null,
-        st.mixed ? h('p', { class: 'muted small' }, `Karışık, ${st.mixed.label}: ${st.mixed.names}. ${st.mixed.chunk} tonda bir sıradakine geçer.`) : null,
+        st.mixed ? h('p', { class: 'muted small' }, `Karışık, ${st.mixed.label}: ${st.mixed.names}. ${st.mixed.chunk} tonda bir sıradakine geçer; hepsi ${st.mixed.rounds} kez gelir, ${st.queue.length} ton.`) : null,
         h('p', null, rex.how),
         rex.focus ? h('p', { class: 'focus-note' }, rex.focus) : null);
     };
@@ -108,7 +108,7 @@ export async function renderLibrary(main) {
     const items = [];
     for (const r of [...results].sort((a, b) => (b.at || 0) - (a.at || 0))) {
       const ex = byId[r.exId];
-      if (!ex || r.kind === 'rating') continue;
+      if (!ex || ex.retired || r.kind === 'rating') continue;
       const tmRow = !!(r.tm && ex.tm);
       const fits = trad === 'tm'
         ? tmRow || (!r.tm && !ex.tm && inTrad(ex, 'tm'))
