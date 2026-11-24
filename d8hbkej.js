@@ -4,32 +4,80 @@ import { tmEx, SET_VARIANTS } from './392vqcv.js';
 export const TRADS = { bati: 'Batı', tm: 'Türk müziği' };
 
 // trad: 'bati' or 'tm' shows a group in one section only, 'ortak' in both.
+// goal: what the group is for; gains: what it develops. Both are shown in the library.
+// Sources: SOVT, Titze (vocology.utah.edu) and Hijleh & Pinto, Journal of Singing 2021;
+// VFE, Stemple et al. 1994 and Sabol, Lee & Stemple, J Voice 1995 (graduate singers,
+// 4 weeks: airflow, phonation volume and maximum phonation time improved); passaggio,
+// Richard Miller (lyric tenor primo passaggio D4, secondo G4); cool-down, Ragan,
+// J Voice (singers' self-reports only); interleaving, Kornell & Bjork 2008.
 export const CATS = {
   sovt: {
     label: 'Yarı kapalı ses yolu (SOVT)', short: 'SOVT', trad: 'ortak',
+    goal: 'Isınma ve ses sağlığı. Ağzın önündeki daralma (pipet, su, dudak) ses yolunda geri basınç oluşturur; ses telleri daha az çarpışarak ve daha az eforla titreşir.',
+    gains: ['sesi kolay başlatma', 'tellerde daha az yük', 'kayıt geçişlerinde denge', 'nefes ile sesin uyumu', 'yorgun seste toparlanma'],
     note: 'Pipet, su, dudak ve dil titreşimi, mırıldanma. Ağzın önündeki daralma ses tellerinin daha az çarpışarak titreşmesine yardım eder. Sıra: önce orta direnç (normal pipet), sonra yüksek (ince pipet ya da suda pipet), sonra düşük (dudak, dil, mırıldanma), en sonda açık sesliye aktarım.',
     noteTm: 'Aynı yarı kapalı ses yolu egzersizleri burada çeşni ve makam dizileriyle, akorsuz çalışılır: altta karar perdesinden sürekli bir dem, melodi piyanoda iki oktav birden. Koma aralıkları pipetle ya da dudak titreşimiyle önce zorlanmadan bulunur, sonra açık sesliye taşınır.',
   },
   'tm-cesni': {
     label: 'Dörtlü ve beşliler (çeşniler)', short: 'Çeşni', trad: 'tm',
-    note: 'Makamların yapı taşları. Aralıklar Arel-Ezgi-Uzdilek sistemine göre koma hassasiyetinde çalınır: T tanini 9 koma, K büyük mücenneb 8, S küçük mücenneb 5, B bakiye 4, A artık ikili 12. Her çeşni kendi yedeniyle karara oturur: Rast ve Buselik’te 5 koma (Irak, Nim zirgüle), Uşşak, Kürdi ve Hicaz’da 9 koma (Rast), Çargah’ta 4 koma (Buselik) aşağıdan. Önce pipetle, sonra açık sesliyle. Çeşni her gün değişir; listeden kendin de seçebilirsin.',
+    goal: 'Makamların yapı taşı olan dörtlü ve beşlileri koma hassasiyetinde söyleyip yedenle karara oturmayı çalıştırır.',
+    gains: ['koma aralıklarını ayırt etme', 'perde doğruluğu (entonasyon)', 'yedenle karara oturma', 'makamları tanımaya hazırlık'],
+    note: 'Makamların yapı taşları. Aralıklar Arel-Ezgi-Uzdilek sistemine göre koma hassasiyetinde çalınır: T tanini 9 koma, K büyük mücenneb 8, S küçük mücenneb 5, B bakiye 4, A artık ikili 12. Her çeşni kendi yedeniyle karara oturur: Rast ve Buselik’te 5 koma (Irak, Nim zirgüle), Uşşak, Kürdi ve Hicaz’da 9 koma (Rast), Çargah’ta 4 koma (Buselik) aşağıdan. Önce pipetle, sonra açık sesliyle. Karışık açıkken benzer çeşniler dönüşümlü gelir; benzerleri art arda söylemek farkları ayırt etmeyi güçlendirir.',
   },
   'tm-dizi': {
     label: 'Makam dizileri', short: 'Makam dizisi', trad: 'tm',
-    note: 'Oktav arpejlerinin yerini alır. 18 makam: Rast, Uşşak, Neva, Hüseyni, Karcığar, Hicaz, Hümayun, Uzzal, Zirgüleli Hicaz, Kürdi, Buselik, Nihavent, Suzinak, Kürdilihicazkar, Mahur, Çargah, Acemaşiran, Saba. Her dizi kendi yedeniyle karara oturur; çıkışta ve inişte farklı basılan perdeler uygulanır. Makam her gün değişir.',
+    goal: 'Makamın dizisini karar, güçlü ve yeden perdeleriyle, çıkışta ve inişte farklı basılan perdelerle birlikte söylemeyi çalıştırır.',
+    gains: ['diziyi ve seyir duraklarını kulağa yerleştirme', 'çıkış ve iniş farkları', 'oktav boyunca perde doğruluğu', 'güçlüde ikinci dinlenme noktası'],
+    note: 'Oktav arpejlerinin yerini alır. 18 makam: Rast, Uşşak, Neva, Hüseyni, Karcığar, Hicaz, Hümayun, Uzzal, Zirgüleli Hicaz, Kürdi, Buselik, Nihavent, Suzinak, Kürdilihicazkar, Mahur, Çargah, Acemaşiran, Saba. Her dizi kendi yedeniyle karara oturur; çıkışta ve inişte farklı basılan perdeler uygulanır. Karışık açıkken seçtiğin makamın ailesi dönüşümlü gelir.',
   },
   'tm-sus': {
     label: 'Süsleme (SOVT ile)', short: 'Süsleme', trad: 'tm',
-    note: 'Çarpma, mordan, dönüş ve uzun hava cümlesi önce yarı kapalı ses yoluyla hafifçe, sonra aynı figür açık sesliyle. Figürler günün makam dizisinde, demle çalınır.',
+    goal: 'Çarpma, mordan, dönüş ve uzun hava cümlesini önce yarı kapalı ses yoluyla, gırtlağı sıkmadan; sonra açık sesliyle çalıştırır.',
+    gains: ['süslemede perde temizliği', 'gırtlakta esneklik', 'süslemeyi zorlamadan, hafif yapma', 'makam içinde süsleme'],
+    note: 'Çarpma, mordan, dönüş ve uzun hava cümlesi önce yarı kapalı ses yoluyla hafifçe, sonra aynı figür açık sesliyle. Figürler seçtiğin makamın dizisinde, demle çalınır. Yarı kapalı ses yolunun süslemeye etkisi araştırılmış değil; tellerin daha az çarpışmasına dayanan bir çıkarım. Etkisini kendi notlarınla izle.',
   },
-  legato: { label: 'Legato ve ses eşitliği', short: 'Legato', trad: 'bati' },
-  arpej: { label: 'Arpej', short: 'Arpej', trad: 'bati' },
-  cevik: { label: 'Çeviklik', short: 'Çeviklik', trad: 'bati' },
-  messa: { label: 'Dinamik (messa di voce)', short: 'Dinamik', trad: 'bati' },
-  gecis: { label: 'Pasaj geçişi (passaggio)', short: 'Pasaj', trad: 'bati' },
-  aralik: { label: 'Aralık', short: 'Aralık', trad: 'bati' },
-  vfe: { label: 'Ses fonksiyon egzersizleri', short: 'VFE', trad: 'ortak' },
-  sogu: { label: 'Soğuma', short: 'Soğuma', trad: 'ortak' },
+  legato: {
+    label: 'Legato ve ses eşitliği', short: 'Legato', trad: 'bati',
+    goal: 'Notaları kesintisiz bir çizgide bağlamayı ve sesli harf değişirken tınıyı aynı tutmayı çalıştırır.',
+    gains: ['nefes akışının sürekliliği', 'seslilerde tını eşitliği', 'cümle çizgisi', 'rezonansın sabit kalması'],
+  },
+  arpej: {
+    label: 'Arpej', short: 'Arpej', trad: 'bati',
+    goal: 'Akor seslerine sıçrayarak geniş aralıkları aynı tını ve kolaylıkla geçmeyi çalıştırır; stakato sürümü temiz ses başlatmayı.',
+    gains: ['atlamalarda hazırlık ve doğruluk', 'aralığın altında ve üstünde eşit tını', 'temiz ses başlatma (stakato)', 'nefes desteğinde esneklik'],
+  },
+  cevik: {
+    label: 'Çeviklik', short: 'Çeviklik', trad: 'bati',
+    goal: 'Hızlı dizilerde sesi hafif ve esnek tutarak her notayı yerine koymayı çalıştırır.',
+    gains: ['çeviklik', 'hızlı pasajlarda entonasyon', 'gırtlakta esneklik', 'ritim doğruluğu'],
+  },
+  messa: {
+    label: 'Dinamik (messa di voce)', short: 'Dinamik', trad: 'bati',
+    goal: 'Aynı perdede sesi yumuşaktan güçlüye ve geri götürür. Klasik şan eğitiminde zor ve iyi tekniğin göstergesi sayılan bir egzersizdir.',
+    gains: ['ses gücünü perdeyi kaydırmadan değiştirme', 'nefes basıncı ile tel kapanışının uyumu', 'piano ve forte’de tını dengesi', 'nefes kontrolü'],
+  },
+  gecis: {
+    label: 'Pasaj geçişi (passaggio)', short: 'Pasaj', trad: 'bati',
+    goal: 'Göğüs ve kafa kaydı arasındaki geçiş bölgesini (lirik tenorda kabaca Re4 ile Sol4 arası) kırılmadan, gırtlağı yükseltmeden geçmeyi çalıştırır.',
+    gains: ['kayıtlar arası pürüzsüz geçiş', 'tiz notalarda yuvarlak tını', 'sesli harf ayarı', 'gırtlağın sabit kalması'],
+  },
+  aralik: {
+    label: 'Aralık', short: 'Aralık', trad: 'bati',
+    goal: 'Bir sesten istenen aralıktaki sese doğrudan gitmeyi, sesi söylemeden önce kafada duymayı çalıştırır.',
+    gains: ['iç kulak', 'entonasyon', 'aralıkları tanıma', 'deşifre ve solfej'],
+  },
+  vfe: {
+    label: 'Ses fonksiyon egzersizleri', short: 'VFE', trad: 'ortak',
+    goal: 'Stemple’ın dört egzersizlik programı: uzun ve yumuşak tutulan sesler ve kaymalarla gırtlak kaslarının gücünü, dayanıklılığını ve dengesini çalıştırır. Günde iki kez önerilir.',
+    gains: ['en uzun ses süresi', 'tel kapanışında verim (hava israfı azalır)', 'ses dayanıklılığı', 'nefes ile ses arasında denge'],
+    note: 'Şan öğrencileriyle yapılan 4 haftalık bir çalışmada, egzersizleri normal çalışmalarına ekleyenlerde hava akışı verimliliği ve en uzun ses süresi arttı (Sabol, Lee ve Stemple 1995). VFE 1’in süresi İlerleme sayfasında grafik olarak izlenir.',
+  },
+  sogu: {
+    label: 'Soğuma', short: 'Soğuma', trad: 'ortak',
+    goal: 'Çalışmanın sonunda sesi yüksek yükten konuşma düzeyine yumuşak kaymalar ve yarı kapalı egzersizlerle indirir.',
+    gains: ['çalışma sonrası rahatlama', 'konuşma sesine yumuşak dönüş', 'yorgunluk hissinde azalma'],
+    note: 'Kanıt az: şarkıcılarla yapılan bir çalışmada katılımcılar soğumayı yararlı bulmuş (kendi değerlendirmeleri; ölçüm değil). Düşük güçte, kısa tut.',
+  },
   serbest: { label: 'Repertuvar', short: 'Repertuvar', trad: 'ortak' },
 };
 

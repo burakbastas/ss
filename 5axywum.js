@@ -12,10 +12,10 @@ import { RES_ORDER } from './rbixnvg.js';
 // SOVT rows are grouped by resistance, in the order they are best practised
 // (Hijleh and Pinto 2021): medium, high, low, then carry-over to an open vowel.
 const RES_HEAD = {
-  orta: 'Orta direnç: pipet',
-  yuksek: 'Yüksek direnç: suda pipet',
-  dusuk: 'Düşük direnç: titreşim, mırıldanma',
-  aktarim: 'Açık sesliye aktarım',
+  orta: ['Orta direnç: pipet', 'Isınmaya buradan başla.'],
+  yuksek: ['Yüksek direnç: suda pipet', 'En güçlü geri basınç; ucu sığ (2–3 cm) tut, yumuşak söyle.'],
+  dusuk: ['Düşük direnç: titreşim, mırıldanma', 'Açık sese daha yakın; hava akışı ve gevşeklik.'],
+  aktarim: ['Açık sesliye aktarım', 'Pipetteki kolaylığı açık sesliye taşır.'],
 };
 const RECENT = 4;
 
@@ -141,15 +141,17 @@ export async function renderLibrary(main) {
     let lists;
     if (cat === 'sovt') {
       const by = RES_ORDER.map((rs) => [RES_HEAD[rs], list.filter((e) => e.res === rs)]);
-      by.push(['Diğer', list.filter((e) => !RES_ORDER.includes(e.res))]);
-      lists = by.filter(([, l]) => l.length).map(([head, l]) => [
-        h('h3', { class: 'lib-sub' }, head),
+      by.push([['Diğer', ''], list.filter((e) => !RES_ORDER.includes(e.res))]);
+      lists = by.filter(([, l]) => l.length).map(([[head, sub], l]) => [
+        h('h3', { class: 'lib-sub' }, head, sub ? h('span', null, sub) : null),
         h('ul', { class: 'lib-list' }, l.map((e) => row(e, variantOf(e))))]);
     } else {
       lists = h('ul', { class: 'lib-list' }, list.map((e) => row(e, variantOf(e))));
     }
     return h('section', { class: 'lib-group', id: `kat-${cat}` },
       h('div', { class: 'lib-ghead' }, h('h2', null, c.label), h('span', { class: 'lib-count' }, String(list.length)), info),
+      c.goal ? h('p', { class: 'lib-goal' }, c.goal) : null,
+      c.gains?.length ? h('p', { class: 'lib-gains' }, h('b', null, 'Geliştirir: '), c.gains.join(' · ')) : null,
       noteEl,
       lists);
   }
