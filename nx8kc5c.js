@@ -1,157 +1,196 @@
-import { h, clear, segmented, fmtMinutes, fmtEst, fmtDuration, fmtDate, dayKey, logoMark } from './nyxk7bs.js';
+import { h, clear, segmented, fmtDuration, fmtMins, fmtDate, dayKey, logoMark } from './nyxk7bs.js';
 import { db, settings, saveSettings } from './f36qmgd.js';
-import { generatePlan, stepLabel, stepCatLabel, ofDayText } from './rdjz6js.js';
-import { runSession } from './amcnm9m.js';
-import { ensureAudio } from './qpy3wmh.js';
 import { lineChart } from './zvga6p5.js';
-import { byId, CATS } from './d8hbkej.js';
+import { RES } from './d8hbkej.js';
+import { scaleFor } from './392vqcv.js';
+import { byDay, breakdown, exerciseLines, lastDays, catLabel } from './rbixnvg.js';
 
 const WEEKDAYS = ['Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct', 'Pz'];
+const WEEKS = 5;
+// Minute thresholds of the calendar shades.
+const LEVELS = [10, 20, 40];
+const TRADS = { bati: 'Batı', tm: 'Türk müziği', ortak: 'Ortak' };
+const PERIODS = [[7, '7 gün'], [30, '30 gün'], [0, 'Tümü']];
 
 export async function renderToday(main) {
-  const [sessions, results] = await Promise.all([db.all('sessions'), db.all('results')]);
-  const today = dayKey(Date.now());
-  const open = sessions
-    .filter((s) => !s.finishedAt && dayKey(s.startedAt) === today && s.idx < s.plan.steps.length)
-    .sort((a, b) => b.startedAt - a.startedAt)[0];
-  const doneToday = sessions.filter((s) => s.finishedAt && dayKey(s.finishedAt) === today);
-
-  const rerender = () => renderToday(main);
-  const top = h('section', { class: 'today-head' },
-    h('div', { class: 'brand-inline', 'aria-hidden': 'true' }, logoMark(), 'VocUp'),
-    h('p', { class: 'muted' }, fmtDate(Date.now())),
-    h('h1', null, open ? 'Yarım kalan seans' : doneToday.length ? 'Bugün çalıştın' : 'Bugünkü çalışma'));
-
-  const planBox = h('section', { class: 'plan' });
-  if (open) renderResume(planBox, open, rerender);
-  else renderPlanner(planBox, { results, sessions, rerender, doneToday: doneToday.length });
-
-  const progress = h('section', { class: 'progress' });
-  clear(main, top, planBox, progress);
-  renderProgress(progress, { sessions, results });
-}
-
-function stepRows(steps, states = [], secs = []) {
-  return h('ol', { class: 'step-list plain' }, steps.map((st, k) => h('li', { class: states[k] || '' },
-    h('span', { class: 'step-name' }, stepLabel(st), stepCatLabel(st) !== stepLabel(st) ? h('small', null, stepCatLabel(st)) : null),
-    h('span', { class: 'step-meta' }, secs[k] ? fmtDuration(secs[k]) : fmtEst(st.estSec)))));
-}
-
-function renderResume(box, session, rerender) {
-  const states = session.plan.steps.map((_, k) => (session.done[k] ? 'done' : session.skipped?.[k] ? 'skipped' : k === session.idx ? 'current' : ''));
-  clear(box,
-    h('p', null, `${session.idx}/${session.plan.steps.length} adım tamamlandı.`),
-    stepRows(session.plan.steps, states, session.stepSec || []),
-    h('div', { class: 'row' },
-      h('button', { class: 'btn primary big', type: 'button', onclick: () => { ensureAudio(); runSession(session, { onChange: rerender }); } }, 'Devam et'),
-      h('button', {
-        class: 'btn ghost', type: 'button',
-        onclick: async () => { session.finishedAt = Date.now(); session.abandoned = true; await db.put('sessions', session); rerender(); },
-      }, 'Bugünlük bitir')));
-}
-
-function renderPlanner(box, { results, sessions, rerender, doneToday }) {
-  let minutes = settings.sessionMin || 30;
-  let energy = 'normal';
-  let plan = null;
-  const list = h('div');
-  const reason = h('p', { class: 'note' });
-  const total = h('span', { class: 'muted' });
-  const ofDay = h('p', { class: 'muted' });
-
-  const regen = () => {
-    plan = generatePlan({ minutes, settings, results, sessions, energy });
-    reason.textContent = plan.reason || '';
-    reason.hidden = !plan.reason;
-    ofDay.textContent = `Plan Batı ve Türk müziği çalışmasını birlikte içerir. ${ofDayText(plan.ofDay)}`;
-    total.textContent = `Toplam yaklaşık ${fmtMinutes(plan.estSec)}`;
-    clear(list, stepRows(plan.steps));
-  };
-
-  const start = async () => {
-    ensureAudio();
-    const session = {
-      startedAt: Date.now(), minutes, plan, idx: 0, done: [], skipped: [], pre: { energy }, activeSec: 0,
-    };
-    session.id = await db.add('sessions', session);
-    runSession(session, { onChange: rerender });
-  };
-
-  clear(box,
-    doneToday ? h('p', { class: 'muted' }, 'İstersen kısa bir ek seans yapabilirsin; ses yorgunsa dinlenmek de çalışmanın parçası.') : null,
-    h('div', { class: 'field' }, h('span', null, 'Süre'),
-      segmented([[15, '15 dk'], [30, '30 dk'], [45, '45 dk']], minutes, (v) => { minutes = v; saveSettings({ sessionMin: v }); regen(); }, 'Süre')),
-    h('div', { class: 'field' }, h('span', null, 'Sesin şu an nasıl?'),
-      segmented([['dinc', 'Dinç'], ['normal', 'Normal'], ['yorgun', 'Yorgun']], energy, (v) => { energy = v; regen(); }, 'Ses durumu')),
-    reason,
-    ofDay,
-    list,
-    h('div', { class: 'row spread' },
-      total,
-      h('div', { class: 'row' },
-        h('button', { class: 'btn ghost', type: 'button', onclick: regen }, 'Başka seçim'),
-        h('button', { class: 'btn primary big', type: 'button', onclick: start }, 'Seansı başlat'))));
-  regen();
-}
-
-function renderProgress(box, { sessions, results }) {
+  let results = [];
+  try { results = await db.all('results'); } catch { /* private mode */ }
   const now = Date.now();
-  const days = {};
-  for (const r of results) if (r.kind !== 'rating') (days[dayKey(r.at)] ||= []).push(r);
+  const days = byDay(results);
+  const todayKey = dayKey(now);
+  let selected = todayKey;
+  let period = PERIODS.some(([v]) => v === settings.statDays) ? settings.statDays : 7;
 
-  // Four-week strip, Monday first.
-  const d0 = new Date();
-  d0.setHours(12, 0, 0, 0);
-  const dow = (d0.getDay() + 6) % 7;
-  const start = new Date(d0.getTime() - (21 + dow) * 86400e3);
-  const cells = [];
-  for (let k = 0; k < 28; k++) {
-    const d = new Date(start.getTime() + k * 86400e3);
-    const key = dayKey(d.getTime());
-    const n = (days[key] || []).length;
-    const level = n === 0 ? 0 : n < 3 ? 1 : n < 6 ? 2 : 3;
-    const future = d.getTime() > now;
-    cells.push(h('span', {
-      class: `cal l${level}${future ? ' future' : ''}${key === dayKey(now) ? ' today' : ''}`,
-      title: `${d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' })}: ${n ? `${n} egzersiz` : 'çalışma yok'}`,
-    }));
-  }
-  const weekAgo = now - 7 * 86400e3;
-  const week = sessions.filter((s) => s.finishedAt && s.finishedAt > weekAgo);
-  const activeDays = Object.keys(days).filter((k) => k >= dayKey(weekAgo)).length;
-  // Working time from the per-exercise timers, split by tradition.
-  const byTrad = { bati: 0, tm: 0, ortak: 0 };
-  for (const r of results) {
-    if (!r.sec || !r.at || r.at < weekAgo) continue;
-    const t = r.tm ? 'tm' : CATS[byId[r.exId]?.cat]?.trad || 'ortak';
-    byTrad[t] += r.sec;
-  }
-  const weekSec = byTrad.bati + byTrad.tm + byTrad.ortak;
+  const detail = h('section', { class: 'day-detail', 'aria-live': 'polite' });
+  const cal = h('div', { class: 'cal-grid', role: 'group', 'aria-label': `Son ${WEEKS} haftanın günlük çalışma dakikaları` });
+  const spread = h('div', { class: 'spread-body' });
 
-  const charts = [];
-  const ratings = results.filter((r) => r.kind === 'rating');
-  const easePts = series(ratings.filter((r) => r.ease != null), (rs) => avg(rs.map((r) => r.ease)));
-  charts.push(chartBlock('Rahatlık', 'Egzersiz sonrası kendi notunun günlük ortalaması (1–5)', easePts, (v) => v.toFixed(1).replace('.', ','), 1, 5));
-  const tunePts = series(ratings.filter((r) => r.tune != null), (rs) => avg(rs.map((r) => r.tune)));
-  charts.push(chartBlock('Entonasyon, kulağına göre', 'Kendi notunun günlük ortalaması (1–5)', tunePts, (v) => v.toFixed(1).replace('.', ','), 1, 5));
-  const mptPts = series(results.filter((r) => r.exId === 'vfe-1' && r.kind === 'sustain'), (rs) => Math.max(...rs.map((r) => r.best)));
-  charts.push(chartBlock('VFE 1 süresi', 'Günün en uzun “i” sesi, saniye', mptPts, (v) => `${Math.round(v)} sn`));
-  const sovtDays = new Set(results.filter((r) => ['sovt', 'tm-sus', 'sovt-tm'].includes(byId[r.exId]?.cat) || byId[r.exId]?.res).map((r) => dayKey(r.at)));
-  const sovtWeek = [...sovtDays].filter((k) => k >= dayKey(now - 7 * 86400e3)).length;
-  const rangeText = `Son 7 günde ${sovtWeek} gün yarı kapalı ses yolu çalıştın.`;
+  const drawCalendar = () => clear(cal, calendarCells(days, selected, now, (key) => {
+    selected = key;
+    drawCalendar();
+    renderDay(detail, key, days[key], results, now);
+  }));
+  const drawSpread = () => renderSpread(spread, breakdown(lastDays(results, period, now)), period);
 
-  clear(box,
-    h('h2', null, 'İlerleme'),
-    h('p', { class: 'stats' }, `Son 7 gün: ${activeDays} gün çalıştın, ${week.length} seans, egzersizlerde ${fmtDuration(weekSec)}.`),
-    weekSec ? h('p', { class: 'muted' }, `Batı ${fmtDuration(byTrad.bati)}, Türk müziği ${fmtDuration(byTrad.tm)}, ortak (SOVT, VFE, soğuma, repertuvar) ${fmtDuration(byTrad.ortak)}.`) : null,
-    h('div', { class: 'cal-wrap' },
-      h('div', { class: 'cal-head' }, WEEKDAYS.map((d) => h('span', null, d))),
-      h('div', { class: 'cal-grid', role: 'img', 'aria-label': 'Son dört haftanın çalışma günleri' }, cells)),
-    rangeText ? h('p', { class: 'muted' }, rangeText) : null,
-    charts);
+  const sum = (n) => breakdown(lastDays(results, n, now));
+  const w = sum(7);
+  const m = sum(30);
+  const t = days[todayKey] ? breakdown(days[todayKey].rows) : null;
+  const tile = (label, sec, sub) => h('div', { class: 'tile' },
+    h('span', { class: 'tile-label' }, label),
+    h('span', { class: 'tile-num', 'aria-label': fmtMins(sec) }, String(Math.round(sec / 60)), h('small', null, 'dk')),
+    h('span', { class: 'tile-sub' }, sub));
+
+  clear(main,
+    h('section', { class: 'today-head' },
+      h('div', { class: 'brand-inline', 'aria-hidden': 'true' }, logoMark(), 'VocUp'),
+      h('p', { class: 'muted' }, fmtDate(now)),
+      h('h1', null, 'İlerleme')),
+    h('div', { class: 'tiles' },
+      tile('Bugün', t?.total || 0, t?.cats.length ? `en çok ${catLabel(t.cats[0][0])}` : 'henüz yok'),
+      tile('Son 7 gün', w.total, `${w.days} gün çalıştın`),
+      tile('Son 30 gün', m.total, `${m.days} gün çalıştın`)),
+    results.some((r) => r.exId)
+      ? null
+      : h('p', { class: 'note' }, 'Henüz kayıt yok. ', h('a', { href: '#egzersiz' }, 'Egzersizler'), ' sayfasından bir egzersiz başlattığında süreler burada birikir.'),
+    h('section', { class: 'block' },
+      h('h2', null, 'Günlük dakika'),
+      h('div', { class: 'cal-wrap' },
+        h('div', { class: 'cal-head' }, WEEKDAYS.map((d) => h('span', null, d))),
+        cal,
+        h('div', { class: 'cal-legend' },
+          h('span', null, 'Kutudaki sayı o günün dakikası; bir güne dokun.'),
+          h('span', { class: 'cal-scale', 'aria-hidden': 'true' }, 'az', [1, 2, 3, 4].map((l) => h('i', { class: `cal-key l${l}` })), 'çok')))),
+    detail,
+    h('section', { class: 'block' },
+      h('div', { class: 'row spread' },
+        h('h2', null, 'Neye ağırlık verdin'),
+        segmented(PERIODS, period, (v) => { period = v; saveSettings({ statDays: v }); drawSpread(); }, 'Dönem')),
+      spread),
+    h('section', { class: 'block' },
+      h('h2', null, 'Kendi notların'),
+      notesCharts(results)));
+  drawCalendar();
+  renderDay(detail, selected, days[selected], results, now);
+  drawSpread();
 }
+
+/* ---------- calendar ---------- */
+
+function calendarCells(days, selected, now, onPick) {
+  const start = new Date(now);
+  start.setHours(12, 0, 0, 0);
+  start.setDate(start.getDate() - ((start.getDay() + 6) % 7) - (WEEKS - 1) * 7);
+  const todayKey = dayKey(now);
+  const cells = [];
+  for (let k = 0; k < WEEKS * 7; k++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + k);
+    const key = dayKey(d.getTime());
+    const day = days[key];
+    const sec = day?.sec || 0;
+    const mins = Math.round(sec / 60);
+    const future = key > todayKey;
+    const level = !day ? 0 : mins < LEVELS[0] ? 1 : mins < LEVELS[1] ? 2 : mins < LEVELS[2] ? 3 : 4;
+    const text = !day ? '' : sec >= 30 ? String(mins) : sec > 0 ? '<1' : '•';
+    const date = d.toLocaleDateString('tr-TR', { day: 'numeric', month: 'long' });
+    cells.push(h('button', {
+      type: 'button',
+      class: `cal l${level}${future ? ' future' : ''}${key === todayKey ? ' today' : ''}${key === selected ? ' sel' : ''}`,
+      disabled: future,
+      'aria-pressed': String(key === selected),
+      'aria-label': `${date}: ${day ? (sec ? fmtDuration(sec) : 'süre kaydı yok') : 'çalışma yok'}`,
+      title: `${date}: ${day ? (sec ? fmtDuration(sec) : 'süre kaydı yok') : 'çalışma yok'}`,
+      onclick: () => onPick(key),
+    }, h('span', { class: 'cal-d' }, d.getDate() === 1 ? h('b', null, `1 ${d.toLocaleDateString('tr-TR', { month: 'short' })}`) : d.getDate()), h('span', { class: 'cal-m' }, text)));
+  }
+  return cells;
+}
+
+/* ---------- one day ---------- */
+
+function dayTitle(key, now) {
+  const y = new Date(now);
+  y.setDate(y.getDate() - 1);
+  if (key === dayKey(now)) return 'Bugün';
+  if (key === dayKey(y.getTime())) return 'Dün';
+  const [yy, mm, dd] = key.split('-').map(Number);
+  return fmtDate(new Date(yy, mm - 1, dd, 12).getTime());
+}
+
+function renderDay(box, key, day, results, now) {
+  const title = dayTitle(key, now);
+  if (!day) {
+    clear(box, h('div', { class: 'day-top' }, h('h2', null, title)), h('p', { class: 'muted' }, 'Bu gün çalışma kaydı yok.'));
+    return;
+  }
+  const b = breakdown(day.rows);
+  const lines = exerciseLines(day.rows);
+  const ratings = results.filter((r) => r.kind === 'rating' && r.at && dayKey(r.at) === key);
+  const avgOf = (f) => {
+    const v = ratings.map((r) => r[f]).filter((x) => x != null);
+    return v.length ? (v.reduce((a, x) => a + x, 0) / v.length).toFixed(1).replace('.', ',') : null;
+  };
+  const ease = avgOf('ease');
+  const tune = avgOf('tune');
+  clear(box,
+    h('div', { class: 'day-top' }, h('h2', null, title), h('span', { class: 'day-total' }, b.total ? fmtDuration(b.total) : 'süre kaydı yok')),
+    b.total ? bars(b.cats, b.total, catLabel) : null,
+    b.resSec ? h('p', { class: 'muted small' }, resText(b, false)) : null,
+    ease || tune ? h('p', { class: 'muted small' }, [ease ? `Rahatlık ${ease}` : null, tune ? `entonasyon ${tune}` : null].filter(Boolean).join(', ') + ' (kendi notun, 1–5).') : null,
+    h('ul', { class: 'ex-lines' }, lines.map((l) => h('li', null,
+      h('span', { class: 'exl-name' }, l.title, h('small', null, [catLabel(l.cat), l.sub].filter(Boolean).join(' · '))),
+      h('span', { class: 'exl-time' }, l.sec ? fmtDuration(l.sec) : '—')))));
+}
+
+/* ---------- period breakdown ---------- */
+
+function resText(b, withDays = true) {
+  const parts = b.res.map(([k, s]) => `${RES[k]} ${fmtMins(s)}`).join(', ');
+  return `Yarı kapalı ses yolu (bütün bölümlerde) ${fmtMins(b.resSec)}${withDays ? `, ${b.resDays} gün` : ''}: ${parts}.`;
+}
+
+function renderSpread(box, b, period) {
+  if (!b.total) {
+    clear(box, h('p', { class: 'muted' }, period ? `Son ${period} günde kayıtlı çalışma yok.` : 'Henüz kayıtlı çalışma yok.'));
+    return;
+  }
+  const trads = Object.entries(b.trads).filter(([, s]) => s > 0).sort((x, y) => y[1] - x[1]);
+  const names = (list, set) => list.map(([id, s]) => `${scaleFor(set, id).short} ${fmtMins(s)}`).join(', ');
+  clear(box,
+    h('p', { class: 'stats' }, `${fmtMins(b.total)} çalıştın, ${b.days} gün; çalıştığın günlerde ortalama ${fmtMins(b.total / b.days)}.`),
+    h('h3', null, 'Teknik'),
+    bars(b.cats, b.total, catLabel),
+    h('h3', null, 'Bölüm'),
+    bars(trads, b.total, (k) => TRADS[k]),
+    h('p', { class: 'muted small' }, 'Ortak: SOVT, VFE, soğuma ve repertuvar. Bunların dem ile çalışılan Türk müziği sürümleri Türk müziğine sayılır.'),
+    b.resSec ? h('p', { class: 'muted' }, resText(b)) : null,
+    b.cesni.length ? h('p', { class: 'muted' }, `Çeşniler: ${names(b.cesni, 'd5')}.`) : null,
+    b.makam.length ? h('p', { class: 'muted' }, `Makamlar: ${names(b.makam, 'dizi')}.`) : null);
+}
+
+/** Horizontal bars, longest first, each with its minutes and share. */
+function bars(entries, total, labelOf) {
+  const max = Math.max(...entries.map(([, s]) => s), 1);
+  return h('ul', { class: 'bars' }, entries.map(([k, sec]) => h('li', null,
+    h('span', { class: 'bar-label' }, labelOf(k)),
+    h('span', { class: 'bar-track', 'aria-hidden': 'true' }, h('span', { class: 'bar-fill', style: { '--w': `${Math.max(2, (sec / max) * 100)}%` } })),
+    h('span', { class: 'bar-val' }, fmtMins(sec), h('small', null, `%${Math.round((sec / total) * 100)}`)))));
+}
+
+/* ---------- self-ratings ---------- */
 
 const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+
+function notesCharts(results) {
+  const ratings = results.filter((r) => r.kind === 'rating');
+  const one = (v) => v.toFixed(1).replace('.', ',');
+  return [
+    chartBlock('Rahatlık', 'Egzersiz sonrası kendi notunun günlük ortalaması (1–5)', series(ratings.filter((r) => r.ease != null), (rs) => avg(rs.map((r) => r.ease))), one, 1, 5),
+    chartBlock('Entonasyon, kulağına göre', 'Kendi notunun günlük ortalaması (1–5)', series(ratings.filter((r) => r.tune != null), (rs) => avg(rs.map((r) => r.tune))), one, 1, 5),
+    chartBlock('VFE 1 süresi', 'Günün en uzun “i” sesi, saniye', series(results.filter((r) => r.exId === 'vfe-1' && r.kind === 'sustain'), (rs) => Math.max(...rs.map((r) => r.best))), (v) => `${Math.round(v)} sn`),
+  ];
+}
 
 function series(rs, reduce) {
   const by = {};
@@ -166,7 +205,7 @@ function chartBlock(title, sub, pts, fmt, yMin = null, yMax = null) {
   const block = h('div', { class: 'chart-block' },
     h('div', { class: 'chart-title' }, h('h3', null, title), readoutEl),
     h('p', { class: 'muted small' }, sub),
-    pts.length >= 2 ? canvas : h('p', { class: 'empty' }, pts.length ? `Şimdilik tek gün: ${fmt(pts[0].v)}. İkinci günden sonra çizgi oluşur.` : 'Henüz veri yok. Seanslar biriktikçe burada görünecek.'));
+    pts.length >= 2 ? canvas : h('p', { class: 'empty' }, pts.length ? `Şimdilik tek gün: ${fmt(pts[0].v)}. İkinci günden sonra çizgi oluşur.` : 'Henüz veri yok. Egzersiz sonrası not verdikçe burada görünecek.'));
   if (pts.length >= 2) {
     requestAnimationFrame(() => {
       const draw = lineChart(canvas, pts, {

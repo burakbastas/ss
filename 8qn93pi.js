@@ -12,7 +12,7 @@ import { inIframe, initAudio, loadPiano, ensureAudio } from './qpy3wmh.js';
 const SW_URL = './syj8mjz.js';
 
 const ROUTES = [
-  { id: 'bugun', label: 'Bugün', icon: 'today', render: renderToday },
+  { id: 'bugun', label: 'İlerleme', icon: 'today', render: renderToday },
   { id: 'egzersiz', label: 'Egzersizler', icon: 'list', render: renderLibrary },
   { id: 'piyano', label: 'Piyano', icon: 'keys', render: renderPiano },
   { id: 'kayit', label: 'Kayıtlar', icon: 'rec', render: renderRecordings },

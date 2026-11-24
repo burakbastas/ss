@@ -126,6 +126,21 @@ export function fmtMinutes(sec) {
   return `${Math.max(1, Math.round(sec / 60))} dk`;
 }
 
+/** Practice time in whole minutes ("0 dk", "<1 dk", "42 dk", "1 sa 5 dk"). */
+export function fmtMins(sec) {
+  if (!sec) return '0 dk';
+  if (sec < 30) return '<1 dk';
+  const m = Math.round(sec / 60);
+  return m < 60 ? `${m} dk` : `${Math.floor(m / 60)} sa${m % 60 ? ` ${m % 60} dk` : ''}`;
+}
+
+/** How long ago a day was, in days ("bugün", "dün", "3 gün önce"). */
+export function fmtAgo(ts, now = Date.now()) {
+  if (!ts) return 'hiç çalışılmadı';
+  const n = Math.round((Date.parse(dayKey(now)) - Date.parse(dayKey(ts))) / 864e5);
+  return n <= 0 ? 'bugün' : n === 1 ? 'dün' : `${n} gün önce`;
+}
+
 /** Estimated length: seconds under a minute (to 5 s), else minutes to the half minute. */
 export function fmtEst(sec) {
   if (sec < 55) return `${Math.max(5, Math.round(sec / 5) * 5)} sn`;

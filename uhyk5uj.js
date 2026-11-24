@@ -160,8 +160,15 @@ function pathAt(path, t) {
   return path[path.length - 1].midi;
 }
 
+// Each row also keeps the exercise's category and SOVT resistance as they were when it was
+// practised, so the progress breakdown stays the same if the library is reorganised later.
 const saveAll = async (rows) => {
-  for (const r of rows) { try { await db.add('results', r); } catch { /* storage full */ } }
+  for (const r of rows) {
+    const ex = byId[r.exId];
+    if (ex && r.cat == null) r.cat = ex.cat;
+    if (ex?.res && r.res == null) r.res = ex.res;
+    try { await db.add('results', r); } catch { /* storage full */ }
+  }
 };
 
 /* ---------- step runner entry ---------- */

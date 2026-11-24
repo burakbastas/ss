@@ -1,103 +1,232 @@
-import { h, clear, segmented, fmtEst, fmtDuration } from './nyxk7bs.js';
-import { EXERCISES, CATS, TRADS, inTrad, tmOnly, resolveEx } from './d8hbkej.js';
-import { stepFor, stepForMix, historyIndex, variantsOfDay, variantFor, ofDayText } from './rdjz6js.js';
+import { h, clear, icon, segmented, fmtEst, fmtDuration, fmtAgo } from './nyxk7bs.js';
+import { EXERCISES, CATS, TRADS, byId, inTrad, tmOnly, resolveEx } from './d8hbkej.js';
+import { stepFor, stepForMix, historyIndex, variantsOfDay, variantHistory, pickVariant } from './rdjz6js.js';
 import { runSingle } from './amcnm9m.js';
 import { exMeta, metaText } from './uhyk5uj.js';
 import { settings, saveSettings, db } from './f36qmgd.js';
 import { ensureAudio } from './qpy3wmh.js';
-import { SET_VARIANTS, variantLabel } from './392vqcv.js';
-import { noteName, VOICES } from './ewdv3t5.js';
+import { SET_VARIANTS, scaleFor } from './392vqcv.js';
+import { noteName } from './ewdv3t5.js';
+import { RES_ORDER } from './rbixnvg.js';
+
+// SOVT rows are grouped by resistance, in the order they are best practised
+// (Hijleh and Pinto 2021): medium, high, low, then carry-over to an open vowel.
+const RES_HEAD = {
+  orta: 'Orta direnç: pipet',
+  yuksek: 'Yüksek direnç: suda pipet',
+  dusuk: 'Düşük direnç: titreşim, mırıldanma',
+  aktarim: 'Açık sesliye aktarım',
+};
+const RECENT = 4;
 
 export async function renderLibrary(main) {
   let results = [];
-  try { results = await db.all('results'); } catch { /* empty */ }
-  const hist = historyIndex(results);
-  const ofDay = variantsOfDay(results);
+  const load = async () => {
+    try { results = await db.all('results'); } catch { results = []; }
+  };
+  await load();
+  let hist = historyIndex(results);
+
   let trad = settings.libTrad === 'tm' ? 'tm' : 'bati';
-  const body = h('div');
-  const intro = h('p', { class: 'muted' });
+  const catPref = { ...(settings.libCat || {}) };
+  // The pickers start from your last choice; before you have chosen, from the çeşni and
+  // makam you have gone longest without.
+  const ofDay = variantsOfDay(results);
+  let cesni = SET_VARIANTS.d5.includes(settings.tmCesni) ? settings.tmCesni : ofDay.cesni;
+  let makam = SET_VARIANTS.dizi.includes(settings.tmMakam) ? settings.tmMakam : ofDay.makam;
+  let mixed = !!settings.tmMix;
+  const expanded = new Set();
 
-  const row = (ex) => {
-    const isTm = trad === 'tm' && !!ex.tm;
-    let variant = isTm ? variantFor(ex, ofDay) : null;
-    let mixed = false;
-    const canMix = isTm && ex.type === 'pattern' && SET_VARIANTS[ex.tm.set].length > 1;
-    const build = () => (mixed ? stepForMix(ex, settings, null, variant) : stepFor(ex, settings, null, variant));
-    const title = h('h3');
-    const mixNote = h('p', { class: 'muted', hidden: true });
-    const info = h('p', { class: 'muted' });
-    const meta = h('p', { class: 'muted' });
-    const n = hist[ex.id]?.count || 0;
-    const last = hist[ex.id]?.lastSec;
-    const update = () => {
-      const rex = resolveEx(ex, variant);
-      const st = build();
-      mixNote.hidden = !st.mixed;
-      mixNote.textContent = st.mixed
-        ? `Karışık, ${st.mixed.label}: ${st.mixed.names}. ${st.mixed.chunk} tonda bir sıradakine geçer.`
-        : '';
-      title.textContent = rex.title;
+  const chips = h('div', { class: 'chips', role: 'radiogroup', 'aria-label': 'Kategori' });
+  const picks = h('div', { class: 'tm-pick' });
+  const body = h('div', { class: 'lib-body' });
+
+  const listFor = (cat) => EXERCISES.filter((e) => e.cat === cat && inTrad(e, trad) && (trad === 'tm' || !tmOnly(e)));
+  const catsHere = () => Object.keys(CATS).filter((c) => (CATS[c].trad === 'ortak' || CATS[c].trad === trad) && listFor(c).length);
+
+  /** Turkish-music variant of a row: the picked çeşni or makam (null in the Western section). */
+  const variantOf = (ex) => {
+    if (trad !== 'tm' || !ex.tm) return null;
+    const set = ex.tm.set;
+    return set === 'dizi' ? makam : set === 'd4' || set === 'd5' ? cesni : SET_VARIANTS[set][0];
+  };
+
+  const refresh = async () => {
+    await load();
+    hist = historyIndex(results);
+    if (trad === 'tm') drawHint();
+    drawBody();
+  };
+
+  function row(ex, variant, { recentAt = null } = {}) {
+    const isTm = variant != null;
+    const canMix = !recentAt && isTm && ex.type === 'pattern' && SET_VARIANTS[ex.tm.set].length > 1;
+    const build = () => (canMix && mixed ? stepForMix(ex, settings, null, variant) : stepFor(ex, settings, null, variant));
+    const st = build();
+    const rex = resolveEx(ex, variant);
+    const hx = hist[ex.id];
+    const key = recentAt ? `son|${ex.id}|${variant || ''}` : `kat|${ex.id}`;
+    const vname = !isTm || rex.set === 'tek' ? null
+      : recentAt ? rex.sc.label
+        : st.mixed ? `${rex.sc.short}, karışık` : rex.sc.short;
+    const meta = [vname, `≈ ${fmtEst(st.estSec)}`, fmtAgo(recentAt || hx?.last)].filter(Boolean).join(' · ');
+
+    const detail = h('div', { class: 'lx-detail', hidden: !expanded.has(key) });
+    const fill = () => {
       const roots = st.queue ? [...new Set(st.queue.map((q) => q.root))] : null;
-      const span = roots?.length
-        ? `${rex.isTm ? 'karar' : 'tonlar'} ${noteName(Math.min(...roots))}–${noteName(Math.max(...roots))} (${roots.length} ton)`
-        : null;
-      info.textContent = [
-        rex.vowel ? `“${rex.vowel}”` : null,
-        span,
-        `yaklaşık ${fmtEst(st.estSec)}`,
-        n ? `${n} kez çalışıldı${last ? `, son ${fmtDuration(last)}` : ''}` : 'henüz çalışılmadı',
-      ].filter(Boolean).join(', ');
-      const m = exMeta(rex);
-      meta.textContent = metaText(m);
-      meta.hidden = !m.length;
+      const facts = [
+        roots?.length ? `${rex.isTm ? 'Karar' : 'Tonlar'} ${noteName(Math.min(...roots))}–${noteName(Math.max(...roots))}, ${roots.length} ton` : null,
+        ...exMeta(rex),
+      ].filter(Boolean);
+      clear(detail,
+        rex.vowel ? h('p', { class: 'muted small' }, `Ses: ${rex.vowel}`) : null,
+        facts.length ? h('p', { class: 'muted small' }, metaText(facts)) : null,
+        hx?.count ? h('p', { class: 'muted small' }, `${hx.count} kez çalışıldı, toplam ${fmtDuration(hx.sec)}.`) : null,
+        st.mixed ? h('p', { class: 'muted small' }, `Karışık, ${st.mixed.label}: ${st.mixed.names}. ${st.mixed.chunk} tonda bir sıradakine geçer.`) : null,
+        h('p', null, rex.how),
+        rex.focus ? h('p', { class: 'focus-note' }, rex.focus) : null);
     };
-    update();
-    let picker = null;
-    if (isTm && SET_VARIANTS[ex.tm.set].length > 1) {
-      const set = ex.tm.set;
-      picker = h('select', { class: 'select narrow-select', 'aria-label': set === 'dizi' ? 'Makam' : 'Çeşni' },
-        SET_VARIANTS[set].map((v) => h('option', { value: v, selected: v === variant }, variantLabel(set, v))));
-      picker.addEventListener('change', () => { variant = picker.value; update(); });
-    }
-    const mixBtn = canMix ? h('button', {
-      class: 'btn ghost toggle', type: 'button', 'aria-pressed': 'false',
-      title: 'Seçili çeşni ya da makamdan başlayıp benzerleriyle dönüşümlü çalış',
-      onclick: (e) => { mixed = !mixed; e.currentTarget.setAttribute('aria-pressed', String(mixed)); update(); },
-    }, 'Karışık') : null;
-    return h('li', null,
-      h('div', { class: 'lib-text' }, title, info, mixNote, meta, h('p', { class: 'lib-how' }, ex.how)),
-      h('div', { class: 'lib-act' },
-        picker,
-        mixBtn,
-        h('button', {
-          class: 'btn', type: 'button', 'aria-label': `${ex.title} başlat`,
-          onclick: () => { ensureAudio(); runSingle(build(), { onFinish: () => renderLibrary(main) }); },
-        }, 'Başla')));
-  };
+    if (expanded.has(key)) fill();
+    const toggle = h('button', {
+      class: 'lx-open', type: 'button', 'aria-expanded': String(expanded.has(key)),
+      onclick: () => {
+        const show = detail.hidden;
+        detail.hidden = !show;
+        toggle.setAttribute('aria-expanded', String(show));
+        if (show) { expanded.add(key); fill(); } else expanded.delete(key);
+      },
+    }, h('span', { class: 'lx-title' }, rex.title), h('span', { class: 'lx-meta' }, meta));
+    const play = h('button', {
+      class: 'play', type: 'button', 'aria-label': `${rex.title} başlat`,
+      onclick: () => { ensureAudio(); runSingle(build(), { onFinish: refresh }); },
+    }, icon('play', 20));
+    return h('li', { class: 'lx' }, h('div', { class: 'lx-row' }, toggle, play), detail);
+  }
 
-  const render = () => {
-    intro.textContent = trad === 'tm'
-      ? `Akor yok: piyano karar perdesinden sürekli bir dem tutar, melodi çaldığında onu iki oktav birden verir. Perdeler koma hassasiyetinde. Karar perdesi ${VOICES[settings.voice]?.label.toLocaleLowerCase('tr') || 'senin'} sesine ve Ayarlar’daki alt-üst sınıra göre yerleşir, tonlar bu aralığın içinde kayar. ${ofDayText(ofDay)}`
-      : `Piyano her tonda akorla eşlik eder; tonlar ${settings.voice === 'tenor' ? 'tenor' : 'seçtiğin ses'} aralığına göre yarım ses yarım ses kayar. Süreler bu aralığa göre hesaplanır; aralığı Ayarlar'dan değiştirebilirsin.`;
-    const cats = Object.keys(CATS).filter((cat) => {
-      const c = CATS[cat];
-      return (c.trad === 'ortak' || c.trad === trad) && EXERCISES.some((e) => e.cat === cat);
-    });
-    clear(body, cats.map((cat) => {
-      const c = CATS[cat];
-      const list = EXERCISES.filter((e) => e.cat === cat && inTrad(e, trad) && (trad === 'tm' || !tmOnly(e)));
-      return h('section', { class: 'lib-group' },
-        h('h2', null, c.label),
-        (trad === 'tm' && c.noteTm) || c.note ? h('p', { class: 'lib-note' }, (trad === 'tm' && c.noteTm) || c.note) : null,
-        h('ul', { class: 'lib-list' }, list.map(row)));
-    }));
+  function recentGroup() {
+    const seen = new Set();
+    const items = [];
+    for (const r of [...results].sort((a, b) => (b.at || 0) - (a.at || 0))) {
+      const ex = byId[r.exId];
+      if (!ex || r.kind === 'rating') continue;
+      const tmRow = !!(r.tm && ex.tm);
+      const fits = trad === 'tm'
+        ? tmRow || (!r.tm && !ex.tm && inTrad(ex, 'tm'))
+        : !r.tm && inTrad(ex, 'bati') && !tmOnly(ex);
+      if (!fits) continue;
+      const k = `${ex.id}|${tmRow ? r.tm : ''}`;
+      if (seen.has(k)) continue;
+      seen.add(k);
+      items.push(row(ex, tmRow ? r.tm : null, { recentAt: r.at }));
+      if (items.length >= RECENT) break;
+    }
+    if (!items.length) return null;
+    return h('section', { class: 'lib-group' },
+      h('div', { class: 'lib-ghead' }, h('h2', null, 'Son çalıştıkların')),
+      h('ul', { class: 'lib-list' }, items));
+  }
+
+  function group(cat) {
+    const c = CATS[cat];
+    const list = listFor(cat);
+    const note = (trad === 'tm' && c.noteTm) || c.note;
+    const noteEl = note ? h('p', { class: 'lib-note', hidden: true }, note) : null;
+    const info = note ? h('button', {
+      class: 'icon-btn info', type: 'button', 'aria-label': `${c.label} hakkında`, 'aria-expanded': 'false',
+      onclick: (e) => {
+        noteEl.hidden = !noteEl.hidden;
+        e.currentTarget.setAttribute('aria-expanded', String(!noteEl.hidden));
+      },
+    }, icon('info', 18)) : null;
+    let lists;
+    if (cat === 'sovt') {
+      const by = RES_ORDER.map((rs) => [RES_HEAD[rs], list.filter((e) => e.res === rs)]);
+      by.push(['Diğer', list.filter((e) => !RES_ORDER.includes(e.res))]);
+      lists = by.filter(([, l]) => l.length).map(([head, l]) => [
+        h('h3', { class: 'lib-sub' }, head),
+        h('ul', { class: 'lib-list' }, l.map((e) => row(e, variantOf(e))))]);
+    } else {
+      lists = h('ul', { class: 'lib-list' }, list.map((e) => row(e, variantOf(e))));
+    }
+    return h('section', { class: 'lib-group', id: `kat-${cat}` },
+      h('div', { class: 'lib-ghead' }, h('h2', null, c.label), h('span', { class: 'lib-count' }, String(list.length)), info),
+      noteEl,
+      lists);
+  }
+
+  function drawChips(cats, cur) {
+    clear(chips, [['all', 'Tümü'], ...cats.map((c) => [c, CATS[c].short])].map(([v, text]) => h('button', {
+      class: 'chip', type: 'button', role: 'radio', 'aria-checked': String(v === cur),
+      onclick: () => {
+        catPref[trad] = v;
+        saveSettings({ libCat: { ...catPref } });
+        drawBody();
+        if (body.getBoundingClientRect().top < 0) body.scrollIntoView({ block: 'start' });
+      },
+    }, text)));
+  }
+
+  // Turkish-music pickers. The selects are built once so they keep focus while you
+  // move through them; only the suggestion line is redrawn.
+  const hint = h('p', { class: 'pick-hint' });
+  const pickSel = {};
+  const setVariant = (pool, v) => {
+    if (pool === 'cesni') { cesni = v; saveSettings({ tmCesni: v }); } else { makam = v; saveSettings({ tmMakam: v }); }
+    if (pickSel[pool].value !== v) pickSel[pool].value = v;
+    drawHint();
+    drawBody();
   };
+  const select = (label, set, pool, value) => {
+    const s = h('select', { class: 'select', 'aria-label': label },
+      SET_VARIANTS[set].map((id) => h('option', { value: id, selected: id === value }, scaleFor(set, id).short)));
+    s.addEventListener('change', () => setVariant(pool, s.value));
+    pickSel[pool] = s;
+    return h('label', { class: 'pick' }, h('span', null, label), s);
+  };
+  clear(picks,
+    select('Çeşni', 'd5', 'cesni', cesni),
+    select('Makam', 'dizi', 'makam', makam),
+    h('button', {
+      class: 'btn ghost toggle', type: 'button', 'aria-pressed': String(mixed),
+      title: 'Kalıp egzersizlerinde seçili çeşni ya da makamdan başlayıp benzerleriyle dönüşümlü çalış',
+      onclick: (e) => { mixed = !mixed; saveSettings({ tmMix: mixed }); e.currentTarget.setAttribute('aria-pressed', String(mixed)); drawBody(); },
+    }, 'Karışık'),
+    hint);
+
+  /** The çeşni and makam you have gone longest without, as one-tap suggestions. */
+  function drawHint() {
+    const vh = variantHistory(results);
+    const sugg = (pool, set, cur) => {
+      const id = pickVariant(pool, vh, () => 0);
+      if (id === cur) return null;
+      return h('button', { class: 'linkish', type: 'button', onclick: () => setVariant(pool, id) },
+        `${scaleFor(set, id).short} (${fmtAgo(vh[pool][id]).replace('hiç çalışılmadı', 'hiç')})`);
+    };
+    const sc = sugg('cesni', 'd5', cesni);
+    const sm = sugg('makam', 'dizi', makam);
+    hint.hidden = !sc && !sm;
+    clear(hint, 'En uzun süredir çalışmadıkların: ', sc, sc && sm ? ', ' : null, sm);
+  }
+
+  function drawPicks() {
+    picks.hidden = trad !== 'tm';
+    if (!picks.hidden) drawHint();
+  }
+
+  function drawBody() {
+    const cats = catsHere();
+    const cur = catPref[trad] === 'all' || cats.includes(catPref[trad]) ? catPref[trad] : 'all';
+    drawChips(cats, cur);
+    clear(body, cur === 'all' ? [recentGroup(), cats.map(group)] : group(cur));
+  }
 
   clear(main,
-    h('section', { class: 'today-head' },
+    h('section', { class: 'lib-head' },
       h('h1', null, 'Egzersizler'),
-      segmented(Object.entries(TRADS), trad, (v) => { trad = v; saveSettings({ libTrad: v }); render(); }, 'Bölüm'),
-      intro),
+      segmented(Object.entries(TRADS), trad, (v) => { trad = v; saveSettings({ libTrad: v }); drawPicks(); drawBody(); }, 'Bölüm')),
+    h('div', { class: 'lib-bar' }, chips),
+    picks,
     body);
-  render();
+  drawPicks();
+  drawBody();
 }
